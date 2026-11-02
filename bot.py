@@ -996,12 +996,12 @@ async def finalize_test(test_code: str):
         diffs = [float(x) for x in diff_str.split(",")]
         total_q = len(correct_answers)
 
-        # Xabarnoma yuborilmagan barcha javoblarni olish
+        # Muddatidan oldin va vaqtida topshirgan barcha javoblarni olish
         async with db.execute(
             """
             SELECT id, user_id, user_name, user_answers, submitted_at
             FROM results
-            WHERE test_code = ? AND (is_notified IS NULL OR is_notified = 0)
+            WHERE test_code = ?
             """,
             (test_code,),
         ) as cursor:
@@ -1218,8 +1218,8 @@ async def show_answers_and_ranks(message: types.Message, state: FSMContext):
             SELECT user_name, score, grade, correct_count, total_q
             FROM results
             WHERE test_code = ?
-            ORDER BY score DESC, id ASC
-            LIMIT 30
+            ORDER BY score DESC, submitted_at ASC
+            LIMIT 50
             """,
             (test_code,),
         ) as cursor:
