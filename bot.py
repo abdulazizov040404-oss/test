@@ -853,7 +853,7 @@ async def start_cmd(message: types.Message, state: FSMContext):
         f"──────────────────────────\n"
         f"1️⃣ <b>Vaqt chegarasi:</b> Har bir test uchun aniq vaqt belgilanadi.\n"
         f"2️⃣ <b>To‘g‘ri javoblar va ballar:</b> Firibgarlikning oldini olish maqsadida, to‘g‘ri javoblar kaliti va har bir o‘quvchining bali faqat <b>test vaqti to‘liq tugagandan so‘ng</b> e’lon qilinadi.\n"
-        f"3️⃣ <b>Reyting:</b> Test vaqti tugagach, to‘g‘ri javoblar va barcha o‘quvchilar o‘rinlari birdaniga sizga hamda rasmiy kanalga yuboriladi.\n"
+        f"3️⃣ <b>Reyting:</b> Test vaqti tugagach, to‘g‘ri javoblar sizga, natijalar va o‘quvchilar o‘rinlari esa rasmiy kanalga yuboriladi.\n"
         f"──────────────────────────\n\n"
         f"🚀 <i>Boshlash uchun quyidagi bo‘limlardan birini tanlang:</i>"
     )
@@ -1250,7 +1250,8 @@ async def get_test_duration(message: types.Message, state: FSMContext):
         f"⏳ <b>Yakunlanish vaqti:</b> <b>{end_time_str}</b> (Toshkent vaqti)\n\n"
         f"📢 <i>O‘quvchilarga ushbu Test ID raqamni bering.</i>\n\n"
         f"🔒 <b>Eslatma:</b> O‘quvchilar javob berganida to‘g‘ri javoblar ko‘rsatilmaydi. "
-        f"Test vaqti tugashi bilan (<b>{end_time_str}</b>) barcha natijalar va to‘g‘ri javoblar kaliti barcha qatnashuvchilarga hamda kanalga avtomatik yuboriladi!",
+        f"Test vaqti tugashi bilan (<b>{end_time_str}</b>) har bir qatnashuvchiga to‘g‘ri javoblar kaliti, "
+        f"rasmiy kanalga esa faqat test natijalari va o‘rinlar avtomatik yuboriladi!",
         reply_markup=menu,
         parse_mode="HTML",
     )
@@ -1841,14 +1842,12 @@ async def _finalize_test(test_code: str):
 
         await db.commit()
 
-    # 2. Kanalga faqat to'g'ri javoblar kaliti va natijalar reytingini yuboramiz
+    # 2. Kanalga faqat test natijalarini (o'rinlar reytingini) yuboramiz
     if channel_done or not CHANNEL_ID:
         return
 
     channel_post = (
         f"🏁 <b>TEST YAKUNLANDI — ID: <code>{test_code}</code></b>\n\n"
-        f"📋 <b>To‘g‘ri javoblar kaliti:</b>\n{formatted_answers}\n"
-        f"──────────────────────────\n"
         f"🏆 <b>NATIJALAR:</b>\n\n"
     )
 
@@ -2010,6 +2009,7 @@ async def show_answers_and_ranks(message: types.Message, state: FSMContext):
 # ==================== BILIM SINOVI (INGLIZ / ALGEBRA / GEOMETRIYA / IQ / ARALASH) ====================
 PRACTICE_BLOCK_ORDER = ("easy", "medium", "hard")
 PRACTICE_SUBJECTS = {"english", "math", "geometry", "iq", "mixed"}
+IQ_PRACTICE_SIZE = 40
 
 PRACTICE_BUTTONS = {
     "📘 Ingliz tili": "english",
@@ -2100,6 +2100,8 @@ async def begin_practice(
             parse_mode="HTML",
         )
         return
+    if subject == "iq":
+        random.shuffle(questions)
 
     await state.set_state(PracticeTest.answering)
     await state.update_data(
@@ -2108,7 +2110,9 @@ async def begin_practice(
     )
 
     counts = {lv: sum(1 for q in questions if q["level"] == lv) for lv in PRACTICE_BLOCK_ORDER}
-    if level in LEVEL_NAMES:
+    if subject == "iq":
+        lines = "Har xil turdagi savollar. Har bir savolda <b>4 ta variant</b>."
+    elif level in LEVEL_NAMES:
         lines = f"Daraja: {LEVEL_BADGES[level]} <b>{LEVEL_NAMES[level]}</b>"
     else:
         lines = "Tartib: <b>osondan qiyinga</b> (aralash emas).\n" + "\n".join(
@@ -2164,6 +2168,9 @@ async def start_practice_subject(message: types.Message, state: FSMContext, subj
     await state.clear()
     if not await ensure_subscribed(message):
         return
+    if subject == "iq":
+        await begin_practice(message, state, subject, IQ_PRACTICE_SIZE, "mixed")
+        return
     await message.answer(
         f"🧠 <b>{PRACTICE_NAMES[subject]}</b>\n\nNechta savol bo‘lsin?",
         reply_markup=get_practice_count_kb(subject),
@@ -2201,6 +2208,14 @@ async def practice_size_chosen(callback: types.CallbackQuery, state: FSMContext)
     if not raw.isdigit() or int(raw) not in PRACTICE_SIZES:
         return
     if not await ensure_subscribed_cb(callback):
+        return
+
+    if subject == "iq":
+        try:
+            await callback.message.delete()
+        except TelegramBadRequest:
+            pass
+        await begin_practice(callback.message, state, subject, IQ_PRACTICE_SIZE, "mixed")
         return
 
     size = int(raw)
@@ -2293,6 +2308,9 @@ async def choose_practice_level(callback: types.CallbackQuery, state: FSMContext
         await callback.message.delete()
     except TelegramBadRequest:
         pass
+    if subject == "iq":
+        await begin_practice(callback.message, state, subject, IQ_PRACTICE_SIZE, "mixed")
+        return
     chosen_level = level if level in LEVEL_NAMES else "mixed"
     await begin_practice(callback.message, state, subject, DEFAULT_PRACTICE_SIZE, chosen_level)
 
@@ -2305,10 +2323,13 @@ async def send_practice_question(message: types.Message, state: FSMContext):
     total = len(questions)
     level = q.get("level", "easy")
 
-    header = (
-        f"{LEVEL_BADGES.get(level, '')} <b>{index + 1}-savol</b> (jami {total} ta)\n"
-        f"<i>{LEVEL_NAMES.get(level, '')}</i>"
-    )
+    if data.get("subject") == "iq":
+        header = f"🧠 <b>{index + 1}-savol</b> (jami {total} ta)"
+    else:
+        header = (
+            f"{LEVEL_BADGES.get(level, '')} <b>{index + 1}-savol</b> (jami {total} ta)\n"
+            f"<i>{LEVEL_NAMES.get(level, '')}</i>"
+        )
     body = (
         f"{html.escape(q['question'])}\n\n"
         f"<b>A)</b> {html.escape(q['a'])}\n"
@@ -2327,7 +2348,10 @@ async def send_practice_question(message: types.Message, state: FSMContext):
                 InlineKeyboardButton(text="C", callback_data="pans_C"),
                 InlineKeyboardButton(text="D", callback_data="pans_D"),
             ],
-            [InlineKeyboardButton(text="❌ To‘xtatish", callback_data="pans_cancel")],
+            [
+                InlineKeyboardButton(text="👁 Javobni bilish", callback_data="pans_reveal"),
+                InlineKeyboardButton(text="⏹ To‘xtatish", callback_data="pans_cancel"),
+            ],
         ]
     )
 
@@ -2373,9 +2397,23 @@ async def practice_answer(callback: types.CallbackQuery, state: FSMContext):
         except TelegramBadRequest:
             pass
         await callback.message.answer(
-            "❌ Bilim sinovi to‘xtatildi.",
+            "⏹ <b>Bilim sinovi butunlay to‘xtatildi.</b>\n\n"
+            "Natija hisoblanmadi va saqlanmadi.",
             reply_markup=await get_main_menu(callback.from_user),
+            parse_mode="HTML",
         )
+        return
+
+    if action == "reveal":
+        questions = data["questions"]
+        index = data["index"]
+        answers = list(data.get("answers", []))
+        await delete_practice_photo(callback, data)
+        try:
+            await callback.message.delete()
+        except TelegramBadRequest:
+            pass
+        await finish_practice(callback, state, answers, reveal={"index": index})
         return
 
     if action not in {"A", "B", "C", "D"}:
@@ -2401,7 +2439,10 @@ async def practice_answer(callback: types.CallbackQuery, state: FSMContext):
 
 
 async def finish_practice(
-    callback: types.CallbackQuery, state: FSMContext, answers: list[str]
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    answers: list[str],
+    reveal: dict | None = None,
 ):
     data = await state.get_data()
     questions = data["questions"]
@@ -2411,6 +2452,7 @@ async def finish_practice(
     correct_count = sum(
         1 for q, a in zip(questions, answers) if a == q["correct"]
     )
+    # Ball har doim jami savollar sonidan hisoblanadi: erta to'xtash foyda bermaydi.
     percent = round(correct_count / total * 100, 1) if total else 0.0
 
     if percent >= 80:
@@ -2453,17 +2495,38 @@ async def finish_practice(
         f"{LEVEL_BADGES[lv]} {LEVEL_NAMES[lv]}: <b>{c}/{t}</b>"
         for lv, (c, t) in per_level.items() if t
     )
-    key_line = "  ".join(f"{i + 1}-{q['correct']}" for i, q in enumerate(questions))
-    summary = (
-        f"🏁 <b>Bilim sinovi yakunlandi!</b>\n\n"
-        f"📚 <b>Fan:</b> {PRACTICE_NAMES[subject]}\n"
-        f"📊 <b>Darajalar bo‘yicha:</b>\n{level_lines}\n\n"
-        f"✅ <b>To‘g‘ri javoblar:</b> {correct_count} / {total} ta\n"
-        f"🎯 <b>Natija:</b> {percent}%\n"
-        f"🏅 <b>Baholash:</b> {result_level}\n\n"
-        f"📋 <b>Javoblar kaliti:</b>\n{key_line}"
+    parts = [
+        "🏁 <b>Bilim sinovi yakunlandi!</b>\n",
+        f"📚 <b>Fan:</b> {PRACTICE_NAMES[subject]}",
+    ]
+    if subject != "iq" and reveal is None and level_lines:
+        parts.append(f"📊 <b>Darajalar bo‘yicha:</b>\n{level_lines}")
+    parts.extend(
+        [
+            f"✅ <b>To‘g‘ri javoblar:</b> {correct_count} / {total} ta",
+            f"🎯 <b>Natija:</b> {percent}%",
+            f"🏅 <b>Baholash:</b> {result_level}",
+        ]
     )
+    if reveal is not None:
+        idx = reveal["index"]
+        revealed_q = questions[idx]
+        letter = revealed_q["correct"]
+        option_text = revealed_q.get(letter.lower(), "")
+        parts.extend(
+            [
+                "",
+                f"👁 <b>{idx + 1}-savolning to‘g‘ri javobi:</b> "
+                f"{letter}) {html.escape(option_text)}",
+                f"<i>Sinov yakunlandi. Ball faqat shu paytgacha belgilangan javoblar "
+                f"bo‘yicha hisoblandi (jami {total} ta savoldan).</i>",
+            ]
+        )
+    else:
+        key_line = "  ".join(f"{i + 1}-{q['correct']}" for i, q in enumerate(questions))
+        parts.extend(["", f"📋 <b>Javoblar kaliti:</b>\n{key_line}"])
 
+    summary = "\n".join(parts)
     await state.clear()
     for chunk in chunk_text(summary):
         await callback.message.answer(chunk, parse_mode="HTML")
