@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import html
+import json
 import logging
 import math
 import os
@@ -17,6 +18,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
+    BufferedInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
@@ -26,8 +28,19 @@ from aiogram.types import (
 
 # ==================== SOZLAMALAR ====================
 TOKEN = "9055733774:AAHIr8SxoXOTmz_nECP6VAIS8TtuKMmQI7U"
-CHANNEL_ID = "@testbot_muazzamxon"
+CHANNEL_ID = "@etest14"
+CHANNEL_URL = "https://t.me/etest14"
 DB_NAME = "tests_rasch.db"
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SEED_FILES = [
+    os.path.join(BASE_DIR, "seed_questions.json"),
+    os.path.join(BASE_DIR, "seed_generated.json"),
+]
+
+SUBJECT_NAMES = {"english": "Ingliz tili", "math": "Matematika"}
+LEVEL_NAMES = {"easy": "Oson", "medium": "O‘rtacha", "hard": "Qiyin"}
+PRACTICE_VARIANT_SIZE = {"english": 30, "math": 45}
 
 # Bosh admin (Super Admin)
 SUPER_ADMIN_IDS = [7041478070]
@@ -177,6 +190,53 @@ async def init_db():
             )
         """)
 
+        # Savollar bazasi
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS question_bank (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                subject TEXT NOT NULL,
+                level TEXT NOT NULL,
+                question TEXT NOT NULL,
+                option_a TEXT NOT NULL,
+                option_b TEXT NOT NULL,
+                option_c TEXT NOT NULL,
+                option_d TEXT NOT NULL,
+                correct TEXT NOT NULL,
+                photo_id TEXT DEFAULT '',
+                source TEXT DEFAULT 'admin',
+                created_by INTEGER DEFAULT 0,
+                created_at REAL DEFAULT 0
+            )
+        """)
+
+        # Sinov natijalari
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS practice_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                user_name TEXT,
+                subject TEXT,
+                level TEXT,
+                correct_count INTEGER DEFAULT 0,
+                total_q INTEGER DEFAULT 0,
+                percent REAL DEFAULT 0,
+                level_result TEXT DEFAULT '',
+                created_at REAL DEFAULT 0
+            )
+        """)
+
+        # Milliy CEFR hujjatlari
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS cefr_docs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT DEFAULT '',
+                file_id TEXT DEFAULT '',
+                file_name TEXT DEFAULT '',
+                added_at REAL DEFAULT 0
+            )
+        """)
+
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_qb_subject_level ON question_bank(subject, level)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_tests_code ON tests(code)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_results_test ON results(test_code, score)")
         await db.commit()
@@ -207,6 +267,110 @@ async def is_admin(user) -> bool:
             return bool(row)
 
 
+async def seed_question_bank():
+    """Seed fayllardan bazada yo'q savollarni yuklaydi (qayta ishga tushirishda ham)."""
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute("SELECT subject, question FROM question_bank") as cursor:
+            rows = await cursor.fetchall()
+        existing = {(s, " ".join(q.split()).lower()) for s, q in rows}
+        now = time.time()
+        added = 0
+        for seed_file in SEED_FILES:
+            if not os.path.exists(seed_file):
+                logging.warning(f"Seed fayl topilmadi: {seed_file}")
+                continue
+            with open(seed_file, "r", encoding="utf-8") as f:
+                items = json.load(f)
+            rows = []
+            for it in items:
+                key = (it["subject"], " ".join(it["question"].split()).lower())
+                if key in existing:
+                    continue
+                existing.add(key)
+                rows.append((
+                    it["subject"], it["level"], it["question"],
+                    it["option_a"], it["option_b"], it["option_c"], it["option_d"],
+                    it["correct"], it.get("source", "seed"), now,
+                ))
+            if rows:
+                await db.executemany(
+                    """
+                    INSERT INTO question_bank
+                    (subject, level, question, option_a, option_b, option_c, option_d, correct, photo_id, source, created_by, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, 0, ?)
+                    """,
+                    rows,
+                )
+                added += len(rows)
+        await db.commit()
+        if added:
+            logging.info(f"Savollar bazasiga {added} ta yangi savol qo'shildi.")
+
+
+# ==================== MAJBURIY OBUNA ====================
+def get_subscription_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📢 Kanalga obuna bo‘lish", url=CHANNEL_URL)],
+            [InlineKeyboardButton(text="✅ Tekshirish", callback_data="sub_check")],
+        ]
+    )
+
+
+async def is_subscribed(user_id: int) -> bool:
+    try:
+        member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+        status = getattr(member, "status", "")
+        value = getattr(status, "value", status)
+        return str(value) in {"member", "administrator", "creator"}
+    except Exception as e:
+        # Bot kanalda admin bo'lmasa Telegram xato qaytaradi — botni bloklamaymiz
+        logging.warning(f"Obuna tekshiruvida xatolik: {e}")
+        return True
+
+
+def get_gate_text() -> str:
+    return (
+        "🔒 <b>Botdan foydalanish uchun avval rasmiy kanalga obuna bo‘ling.</b>\n\n"
+        f"📢 {CHANNEL_URL}\n\n"
+        "<i>Obuna bo‘lgach, «✅ Tekshirish» tugmasini bosing.</i>"
+    )
+
+
+async def ensure_subscribed(message: types.Message) -> bool:
+    if await is_subscribed(message.from_user.id):
+        return True
+    await message.answer(get_gate_text(), reply_markup=get_subscription_kb(), parse_mode="HTML")
+    return False
+
+
+async def ensure_subscribed_cb(callback: types.CallbackQuery) -> bool:
+    if await is_subscribed(callback.from_user.id):
+        return True
+    await callback.answer("Avval rasmiy kanalga obuna bo‘ling!", show_alert=True)
+    await callback.message.answer(
+        get_gate_text(), reply_markup=get_subscription_kb(), parse_mode="HTML"
+    )
+    return False
+
+
+@dp.callback_query(F.data == "sub_check")
+async def sub_check(callback: types.CallbackQuery):
+    if await is_subscribed(callback.from_user.id):
+        try:
+            await callback.message.delete()
+        except TelegramBadRequest:
+            pass
+        await callback.answer("✅ Obuna tasdiqlandi!")
+        await callback.message.answer(
+            "Asosiy menyu:", reply_markup=await get_main_menu(callback.from_user)
+        )
+    else:
+        await callback.answer(
+            "❌ Obuna hali tasdiqlanmadi. Kanalga obuna bo‘ling.", show_alert=True
+        )
+
+
 # ==================== FSM HOLATLARI ====================
 class CreateTest(StatesGroup):
     waiting_for_material = State()
@@ -229,6 +393,33 @@ class AdminPanelState(StatesGroup):
     waiting_for_del_id = State()
 
 
+class PracticeTest(StatesGroup):
+    answering = State()
+
+
+class AddQuestion(StatesGroup):
+    waiting_question = State()
+    waiting_options = State()
+
+
+class UploadQuestions(StatesGroup):
+    waiting_file = State()
+
+
+class EditQuestion(StatesGroup):
+    waiting_id = State()
+    waiting_value = State()
+
+
+class DeleteQuestions(StatesGroup):
+    waiting_ids = State()
+
+
+class CefrAdd(StatesGroup):
+    waiting_doc = State()
+    waiting_title = State()
+
+
 # ==================== KLAVIATURALAR ====================
 async def get_main_menu(user) -> ReplyKeyboardMarkup:
     super_admin = await is_super_admin(user)
@@ -236,16 +427,18 @@ async def get_main_menu(user) -> ReplyKeyboardMarkup:
 
     keyboard = [
         [KeyboardButton(text="📝 Test yechish")],
+        [
+            KeyboardButton(text="📘 Ingliz tili"),
+            KeyboardButton(text="➗ Matematika"),
+        ],
+        [KeyboardButton(text="🇺🇿 Milliy CEFR")],
+        [KeyboardButton(text="📊 Javoblar va o‘rinlar")],
     ]
 
     if admin_user:
         keyboard.append([
             KeyboardButton(text="➕ Test qo'shish"),
-            KeyboardButton(text="📊 Javoblar va o‘rinlar"),
-        ])
-    else:
-        keyboard.append([
-            KeyboardButton(text="📊 Javoblar va o‘rinlar"),
+            KeyboardButton(text="🗂 Savollar bazasi"),
         ])
 
     if super_admin:
@@ -288,6 +481,67 @@ admin_panel_menu = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+bank_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="➕ Savol qo'shish"), KeyboardButton(text="📥 Fayldan yuklash")],
+        [KeyboardButton(text="✏️ Savolni tahrirlash"), KeyboardButton(text="🗑 Savolni o'chirish")],
+        [KeyboardButton(text="📤 Eksport"), KeyboardButton(text="📊 Statistika")],
+        [KeyboardButton(text="🔙 Asosiy menyu")],
+    ],
+    resize_keyboard=True,
+)
+
+
+def get_level_keyboard(subject: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🟢 Oson", callback_data=f"lv:{subject}:easy"),
+                InlineKeyboardButton(text="🟡 O‘rtacha", callback_data=f"lv:{subject}:medium"),
+            ],
+            [InlineKeyboardButton(text="🔴 Qiyin", callback_data=f"lv:{subject}:hard")],
+            [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="lv:cancel")],
+        ]
+    )
+
+
+def get_bank_subject_kb(prefix: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📘 Ingliz tili", callback_data=f"{prefix}:english"),
+                InlineKeyboardButton(text="➗ Matematika", callback_data=f"{prefix}:math"),
+            ],
+            [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="qb:cancel")],
+        ]
+    )
+
+
+def get_bank_level_kb(prefix: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🟢 Oson", callback_data=f"{prefix}:easy"),
+                InlineKeyboardButton(text="🟡 O‘rtacha", callback_data=f"{prefix}:medium"),
+            ],
+            [InlineKeyboardButton(text="🔴 Qiyin", callback_data=f"{prefix}:hard")],
+            [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="qb:cancel")],
+        ]
+    )
+
+
+def get_correct_kb(prefix: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="A", callback_data=f"{prefix}:A"),
+                InlineKeyboardButton(text="B", callback_data=f"{prefix}:B"),
+                InlineKeyboardButton(text="C", callback_data=f"{prefix}:C"),
+                InlineKeyboardButton(text="D", callback_data=f"{prefix}:D"),
+            ]
+        ]
+    )
+
 
 def get_options_keyboard(current_q: int, total_q: int):
     return InlineKeyboardMarkup(
@@ -309,6 +563,8 @@ def get_options_keyboard(current_q: int, total_q: int):
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message, state: FSMContext):
     await state.clear()
+    if not await ensure_subscribed(message):
+        return
     user_name = html.escape(message.from_user.full_name or "Foydalanuvchi")
     user_id = message.from_user.id
     menu = await get_main_menu(user_id)
@@ -728,6 +984,8 @@ async def get_test_duration(message: types.Message, state: FSMContext):
 @dp.message(F.text == "📝 Test yechish")
 async def start_solve_test(message: types.Message, state: FSMContext):
     await state.clear()
+    if not await ensure_subscribed(message):
+        return
     await state.set_state(SolveTest.waiting_for_id)
     await message.answer(
         "Test ID raqamini kiriting:\n\n<i>Bekor qilish uchun '❌ Bekor qilish' ni bosing.</i>",
@@ -1161,6 +1419,8 @@ async def check_test_deadlines_loop():
 @dp.message(F.text == "📊 Javoblar va o‘rinlar")
 async def start_check_answers(message: types.Message, state: FSMContext):
     await state.clear()
+    if not await ensure_subscribed(message):
+        return
     await state.set_state(CheckAnswersAndRank.waiting_for_id)
     await message.answer(
         "Natijalari va javoblarini bilmoqchi bo‘lgan <b>Test ID</b> raqamini kiriting:\n\n"
@@ -1262,6 +1522,1135 @@ async def show_answers_and_ranks(message: types.Message, state: FSMContext):
     await state.clear()
 
 
+# ==================== BILIM SINOVI (INGLIZ / MATEMATIKA) ====================
+async def start_practice_subject(message: types.Message, state: FSMContext, subject: str):
+    await state.clear()
+    if not await ensure_subscribed(message):
+        return
+    await message.answer(
+        f"🧠 <b>{SUBJECT_NAMES[subject]}</b> — bilim sinovi\n\n"
+        "Qiyinlik darajasini tanlang:",
+        reply_markup=get_level_keyboard(subject),
+        parse_mode="HTML",
+    )
+
+
+@dp.message(F.text == "📘 Ingliz tili")
+async def practice_english(message: types.Message, state: FSMContext):
+    await start_practice_subject(message, state, "english")
+
+
+@dp.message(F.text == "➗ Matematika")
+async def practice_math(message: types.Message, state: FSMContext):
+    await start_practice_subject(message, state, "math")
+
+
+@dp.callback_query(F.data.startswith("lv:"))
+async def choose_practice_level(callback: types.CallbackQuery, state: FSMContext):
+    parts = callback.data.split(":")
+    if len(parts) != 3:
+        await callback.answer()
+        return
+
+    _, subject, level = parts
+
+    if level == "cancel":
+        await callback.answer()
+        await state.clear()
+        try:
+            await callback.message.edit_text("❌ Bilim sinovi bekor qilindi.")
+        except TelegramBadRequest:
+            pass
+        await callback.message.answer(
+            "Asosiy menyu:", reply_markup=await get_main_menu(callback.from_user)
+        )
+        return
+
+    if subject not in PRACTICE_VARIANT_SIZE or level not in LEVEL_NAMES:
+        await callback.answer()
+        return
+
+    if not await ensure_subscribed_cb(callback):
+        return
+
+    limit = PRACTICE_VARIANT_SIZE[subject]
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute(
+            """
+            SELECT id, question, option_a, option_b, option_c, option_d, correct, photo_id
+            FROM question_bank
+            WHERE subject = ? AND level = ?
+            ORDER BY RANDOM()
+            LIMIT ?
+            """,
+            (subject, level, limit),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    if not rows:
+        await callback.answer("Bu darajada savollar topilmadi!", show_alert=True)
+        return
+
+    questions = [
+        {
+            "id": r[0], "question": r[1], "a": r[2], "b": r[3],
+            "c": r[4], "d": r[5], "correct": r[6], "photo_id": r[7] or "",
+        }
+        for r in rows
+    ]
+
+    await state.set_state(PracticeTest.answering)
+    await state.update_data(
+        subject=subject, level=level, questions=questions, index=0, answers=[]
+    )
+
+    await callback.answer()
+    try:
+        await callback.message.delete()
+    except TelegramBadRequest:
+        pass
+
+    await callback.message.answer(
+        f"🧠 <b>{SUBJECT_NAMES[subject]}</b> — <b>{LEVEL_NAMES[level]}</b>\n"
+        f"Jami <b>{len(questions)} ta</b> savol. Omad!",
+        parse_mode="HTML",
+    )
+    await send_practice_question(callback.message, await state.get_data())
+
+
+async def send_practice_question(message: types.Message, data: dict):
+    questions = data["questions"]
+    index = data["index"]
+    q = questions[index]
+    total = len(questions)
+
+    header = f"<b>{index + 1}-savol</b> (jami {total} ta)"
+    body = (
+        f"{html.escape(q['question'])}\n\n"
+        f"<b>A)</b> {html.escape(q['a'])}\n"
+        f"<b>B)</b> {html.escape(q['b'])}\n"
+        f"<b>C)</b> {html.escape(q['c'])}\n"
+        f"<b>D)</b> {html.escape(q['d'])}"
+    )
+    if len(body) > 3900:
+        body = body[:3890] + "…"
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="A", callback_data="pans_A"),
+                InlineKeyboardButton(text="B", callback_data="pans_B"),
+                InlineKeyboardButton(text="C", callback_data="pans_C"),
+                InlineKeyboardButton(text="D", callback_data="pans_D"),
+            ],
+            [InlineKeyboardButton(text="❌ To‘xtatish", callback_data="pans_cancel")],
+        ]
+    )
+
+    if q["photo_id"]:
+        await message.answer_photo(
+            photo=q["photo_id"], caption=header, parse_mode="HTML"
+        )
+        await message.answer(f"{header}\n\n{body}", reply_markup=kb, parse_mode="HTML")
+    else:
+        await message.answer(
+            f"{header}\n\n{body}", reply_markup=kb, parse_mode="HTML"
+        )
+
+
+@dp.callback_query(PracticeTest.answering, F.data.startswith("pans_"))
+async def practice_answer(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    data = await state.get_data()
+    if not data or "questions" not in data:
+        await state.clear()
+        try:
+            await callback.message.edit_text(
+                "⚠️ Test sessiyasi topilmadi. Qaytadan boshlang."
+            )
+        except TelegramBadRequest:
+            pass
+        return
+
+    action = callback.data.split("_")[1]
+
+    if action == "cancel":
+        await state.clear()
+        try:
+            await callback.message.delete()
+        except TelegramBadRequest:
+            pass
+        await callback.message.answer(
+            "❌ Bilim sinovi to‘xtatildi.",
+            reply_markup=await get_main_menu(callback.from_user),
+        )
+        return
+
+    if action not in {"A", "B", "C", "D"}:
+        return
+
+    questions = data["questions"]
+    index = data["index"]
+    answers = list(data.get("answers", []))
+    answers.append(action)
+
+    try:
+        await callback.message.delete()
+    except TelegramBadRequest:
+        pass
+
+    next_index = index + 1
+    if next_index < len(questions):
+        await state.update_data(index=next_index, answers=answers)
+        await send_practice_question(callback.message, await state.get_data())
+    else:
+        await finish_practice(callback, state, answers)
+
+
+async def finish_practice(
+    callback: types.CallbackQuery, state: FSMContext, answers: list[str]
+):
+    data = await state.get_data()
+    questions = data["questions"]
+    subject = data["subject"]
+    level = data["level"]
+    total = len(questions)
+
+    correct_count = sum(
+        1 for q, a in zip(questions, answers) if a == q["correct"]
+    )
+    percent = round(correct_count / total * 100, 1) if total else 0.0
+
+    if percent >= 80:
+        result_level = "🟢 Yuqori"
+    elif percent >= 50:
+        result_level = "🟡 O‘rta"
+    else:
+        result_level = "🔴 Past"
+
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(
+            """
+            INSERT INTO practice_results
+            (user_id, user_name, subject, level, correct_count, total_q, percent, level_result, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                callback.from_user.id,
+                callback.from_user.full_name or "Foydalanuvchi",
+                subject,
+                level,
+                correct_count,
+                total,
+                percent,
+                result_level,
+                time.time(),
+            ),
+        )
+        await db.commit()
+
+    key_line = "  ".join(f"{i + 1}-{q['correct']}" for i, q in enumerate(questions))
+    summary = (
+        f"🏁 <b>Bilim sinovi yakunlandi!</b>\n\n"
+        f"📘 <b>Fan:</b> {SUBJECT_NAMES[subject]}\n"
+        f"🎚 <b>Daraja:</b> {LEVEL_NAMES[level]}\n"
+        f"✅ <b>To‘g‘ri javoblar:</b> {correct_count} / {total} ta\n"
+        f"📊 <b>Natija:</b> {percent}%\n"
+        f"🏅 <b>Baholash:</b> {result_level}\n\n"
+        f"📋 <b>Javoblar kaliti:</b>\n{key_line}"
+    )
+
+    await state.clear()
+    await callback.message.answer(summary, parse_mode="HTML")
+    await callback.message.answer(
+        "Asosiy menyu:", reply_markup=await get_main_menu(callback.from_user)
+    )
+
+
+# ==================== SAVOLLAR BAZASI (ADMIN) ====================
+def parse_options_text(text: str):
+    lines = []
+    for raw in text.replace("\r", "").split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        if len(re.findall(r"(?:^|\s)[A-D][).:]\s", line)) >= 2:
+            lines.extend(p.strip() for p in re.split(r"(?=(?:^|\s)[A-D][).:]\s)", line) if p.strip())
+        else:
+            lines.append(line)
+
+    parts = {}
+    for line in lines:
+        m = re.match(r"^([A-D])[).:]\s*(.+)$", line.strip(), re.I)
+        if m:
+            parts[m.group(1).upper()] = m.group(2).strip()
+
+    if set(parts) != {"A", "B", "C", "D"} or not all(parts.values()):
+        return None
+    return parts
+
+
+def parse_questions_txt(text: str):
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    blocks = re.split(r"\n\s*\n", text)
+    items, errors = [], []
+
+    for bi, block in enumerate(blocks, start=1):
+        lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
+        if not lines:
+            continue
+
+        qid = None
+        m = re.match(r"^#ID\s*(\d+)$", lines[0], re.I)
+        if m:
+            qid = int(m.group(1))
+            lines = lines[1:]
+
+        question_lines, opts, correct = [], {}, None
+        for line in lines:
+            mj = re.match(
+                r"^(?:Javob|Answer|To['‘’]g['‘’]ri javob)\s*[:：]\s*([A-D])\s*$",
+                line,
+                re.I,
+            )
+            mo = re.match(r"^([A-D])[).:]\s*(.+)$", line, re.I)
+            if mj and correct is None:
+                correct = mj.group(1).upper()
+            elif mo and correct is None:
+                if len(re.findall(r"(?:^|\s)[A-D][).:]\s", line)) >= 2:
+                    for part in re.split(r"(?=(?:^|\s)[A-D][).:]\s)", line):
+                        pm = re.match(r"^\s*([A-D])[).:]\s*(.+)$", part, re.I)
+                        if pm:
+                            opts[pm.group(1).upper()] = pm.group(2).strip()
+                else:
+                    opts[mo.group(1).upper()] = mo.group(2).strip()
+            elif correct is None and not opts:
+                question_lines.append(line)
+
+        question = " ".join(question_lines).strip()
+        if (
+            not question
+            or set(opts) != {"A", "B", "C", "D"}
+            or not all(opts.values())
+            or not correct
+        ):
+            errors.append(f"{bi}-blok: noto‘g‘ri format")
+            continue
+
+        items.append(
+            {"id": qid, "question": question, "options": opts, "correct": correct}
+        )
+
+    return items, errors
+
+
+async def insert_question(subject, level, question, opts, correct, photo_id, user_id):
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(
+            """
+            INSERT INTO question_bank
+            (subject, level, question, option_a, option_b, option_c, option_d, correct, photo_id, source, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', ?, ?)
+            """,
+            (
+                subject, level, question,
+                opts["A"], opts["B"], opts["C"], opts["D"],
+                correct, photo_id or "", user_id, time.time(),
+            ),
+        )
+        await db.commit()
+
+
+@dp.message(F.text == "🗂 Savollar bazasi")
+async def open_question_bank(message: types.Message, state: FSMContext):
+    await state.clear()
+    if not await is_admin(message.from_user):
+        await message.answer(
+            "⛔️ Bu bo‘lim faqat adminlar uchun!",
+            reply_markup=await get_main_menu(message.from_user),
+        )
+        return
+    await message.answer(
+        "🗂 <b>Savollar bazasi</b>\n\nKerakli bo‘limni tanlang:",
+        reply_markup=bank_menu,
+        parse_mode="HTML",
+    )
+
+
+@dp.message(F.text == "📊 Statistika")
+async def qb_stats(message: types.Message, state: FSMContext):
+    if not await is_admin(message.from_user):
+        return
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute(
+            "SELECT subject, level, COUNT(*) FROM question_bank GROUP BY subject, level"
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    counts = {(s, l): c for s, l, c in rows}
+    text = "📊 <b>Savollar bazasi statistikasi</b>\n\n"
+    for subj in ("english", "math"):
+        text += f"<b>{SUBJECT_NAMES[subj]}</b>\n"
+        for lvl in ("easy", "medium", "hard"):
+            text += f"  • {LEVEL_NAMES[lvl]}: {counts.get((subj, lvl), 0)} ta\n"
+        text += "\n"
+    text += f"<b>Jami:</b> {sum(counts.values())} ta savol"
+
+    await message.answer(text, reply_markup=bank_menu, parse_mode="HTML")
+
+
+@dp.message(F.text == "➕ Savol qo'shish")
+async def qb_add_start(message: types.Message, state: FSMContext):
+    if not await is_admin(message.from_user):
+        return
+    await state.clear()
+    await message.answer(
+        "Qaysi fanga savol qo‘shamiz?", reply_markup=get_bank_subject_kb("qa")
+    )
+
+
+@dp.callback_query(F.data == "qb:cancel")
+async def qb_cancel(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    try:
+        await callback.message.edit_text("❌ Bekor qilindi.")
+    except TelegramBadRequest:
+        pass
+    if await is_admin(callback.from_user):
+        await callback.message.answer("Savollar bazasi:", reply_markup=bank_menu)
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("qa:"))
+async def qb_add_subject(callback: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user):
+        await callback.answer("⛔️", show_alert=True)
+        return
+    subject = callback.data.split(":")[1]
+    if subject not in SUBJECT_NAMES:
+        await callback.answer()
+        return
+    await callback.message.edit_text(
+        f"{SUBJECT_NAMES[subject]} — darajani tanlang:",
+        reply_markup=get_bank_level_kb(f"qal:{subject}"),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("qal:"))
+async def qb_add_level(callback: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user):
+        await callback.answer("⛔️", show_alert=True)
+        return
+    _, subject, level = callback.data.split(":")
+    if subject not in SUBJECT_NAMES or level not in LEVEL_NAMES:
+        await callback.answer()
+        return
+
+    await state.set_state(AddQuestion.waiting_question)
+    await state.update_data(subject=subject, level=level)
+    await callback.message.edit_text(
+        f"✅ {SUBJECT_NAMES[subject]} / {LEVEL_NAMES[level]}\n\n"
+        "Savol matnini yuboring (rasmli savol bo‘lsa — rasm va izoh yuboring):"
+    )
+    await callback.answer()
+
+
+@dp.message(AddQuestion.waiting_question)
+async def qb_add_question(message: types.Message, state: FSMContext):
+    if not await is_admin(message.from_user):
+        return
+
+    if message.photo:
+        question = (message.caption or "").strip()
+        photo_id = message.photo[-1].file_id
+    elif message.text:
+        question = message.text.strip()
+        photo_id = ""
+    else:
+        await message.answer("Iltimos, savol matnini yoki rasmni yuboring:")
+        return
+
+    if not question:
+        await message.answer("Savol matni bo‘sh bo‘lmasligi kerak. Qaytadan yuboring:")
+        return
+
+    await state.update_data(question=question, photo_id=photo_id, options=None, correct=None)
+    await state.set_state(AddQuestion.waiting_options)
+    await message.answer(
+        "Variantlarni bitta xabarda yuboring (har biri yangi qatorda yoki bitta qatorda):\n\n"
+        "A) birinchi variant\nB) ikkinchi variant\nC) uchinchi variant\nD) to‘rtinchi variant",
+        reply_markup=cancel_menu,
+    )
+
+
+@dp.message(AddQuestion.waiting_options, F.text)
+async def qb_add_options(message: types.Message, state: FSMContext):
+    if not await is_admin(message.from_user):
+        return
+
+    opts = parse_options_text(message.text)
+    if not opts:
+        await message.answer(
+            "⚠️ 4 ta variantni A), B), C), D) shaklida yuboring. Qaytadan:"
+        )
+        return
+
+    await state.update_data(options=opts)
+    await message.answer(
+        "To‘g‘ri javobni tanlang:", reply_markup=get_correct_kb("qc")
+    )
+
+
+@dp.message(AddQuestion.waiting_options)
+async def qb_add_options_hint(message: types.Message):
+    await message.answer("Iltimos, variantlarni matn ko‘rinishida yuboring:")
+
+
+@dp.callback_query(F.data.startswith("qc:"))
+async def qb_add_correct(callback: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user):
+        await callback.answer("⛔️", show_alert=True)
+        return
+
+    correct = callback.data.split(":")[1]
+    data = await state.get_data()
+    if not data.get("question") or not data.get("options"):
+        await callback.answer("Sessiya eskirgan, qaytadan boshlang.", show_alert=True)
+        return
+
+    await insert_question(
+        data["subject"], data["level"], data["question"],
+        data["options"], correct, data.get("photo_id", ""),
+        callback.from_user.id,
+    )
+
+    await callback.message.edit_text(
+        f"✅ Savol saqlandi.\n\nTo‘g‘ri javob: <b>{correct}</b>\n\nYana savol qo‘shamizmi?",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="➕ Ha", callback_data="qm:yes"),
+                    InlineKeyboardButton(text="✅ Yo‘q", callback_data="qm:no"),
+                ]
+            ]
+        ),
+        parse_mode="HTML",
+    )
+    await callback.answer("✅ Saqlandi")
+
+
+@dp.callback_query(F.data.startswith("qm:"))
+async def qb_add_more(callback: types.CallbackQuery, state: FSMContext):
+    if callback.data == "qm:yes":
+        await state.set_state(AddQuestion.waiting_question)
+        await callback.message.edit_text(
+            "Keyingi savol matnini yuboring (yoki rasm + izoh):"
+        )
+    else:
+        await state.clear()
+        await callback.message.edit_text("✅ Savollar saqlandi.")
+        await callback.message.answer("Savollar bazasi:", reply_markup=bank_menu)
+    await callback.answer()
+
+
+@dp.message(F.text == "📥 Fayldan yuklash")
+async def qb_upload_start(message: types.Message, state: FSMContext):
+    if not await is_admin(message.from_user):
+        return
+    await state.clear()
+    await message.answer(
+        "Qaysi fanga yuklaymiz?", reply_markup=get_bank_subject_kb("qu")
+    )
+
+
+@dp.callback_query(F.data.startswith("qu:"))
+async def qb_upload_subject(callback: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user):
+        await callback.answer("⛔️", show_alert=True)
+        return
+    subject = callback.data.split(":")[1]
+    if subject not in SUBJECT_NAMES:
+        await callback.answer()
+        return
+    await callback.message.edit_text(
+        f"{SUBJECT_NAMES[subject]} — darajani tanlang:",
+        reply_markup=get_bank_level_kb(f"qul:{subject}"),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("qul:"))
+async def qb_upload_level(callback: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user):
+        await callback.answer("⛔️", show_alert=True)
+        return
+    _, subject, level = callback.data.split(":")
+    if subject not in SUBJECT_NAMES or level not in LEVEL_NAMES:
+        await callback.answer()
+        return
+
+    await state.set_state(UploadQuestions.waiting_file)
+    await state.update_data(subject=subject, level=level)
+    await callback.message.edit_text(
+        f"✅ {SUBJECT_NAMES[subject]} / {LEVEL_NAMES[level]}\n\n"
+        "Endi <b>.txt</b> fayl yuboring. Format:\n\n"
+        "<code>#ID 123\n"
+        "Savol matni\n"
+        "A) birinchi variant\n"
+        "B) ikkinchi variant\n"
+        "C) uchinchi variant\n"
+        "D) to‘rtinchi variant\n"
+        "Javob: B</code>\n\n"
+        "<i>#ID qatori ixtiyoriy — mavjud savolni yangilaydi, bo‘lmasa yangi savol qo‘shiladi.\n"
+        "Bloklar bo‘sh qator bilan ajratiladi.</i>",
+        reply_markup=cancel_menu,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@dp.message(UploadQuestions.waiting_file, F.document)
+async def qb_upload_file(message: types.Message, state: FSMContext):
+    if not await is_admin(message.from_user):
+        return
+
+    file_name = message.document.file_name or ""
+    if not file_name.lower().endswith((".txt", ".csv", ".md")):
+        await message.answer("⚠️ Faqat .txt fayl yuboring.")
+        return
+
+    file = await bot.get_file(message.document.file_id)
+    buffer = await bot.download_file(file.file_path)
+    raw = buffer.read()
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        content = raw.decode("cp1251", errors="replace")
+
+    data = await state.get_data()
+    subject = data.get("subject")
+    level = data.get("level")
+    if subject not in SUBJECT_NAMES or level not in LEVEL_NAMES:
+        await state.clear()
+        await message.answer(
+            "⚠️ Sessiya eskirgan, qaytadan boshlang.", reply_markup=bank_menu
+        )
+        return
+
+    items, errors = parse_questions_txt(content)
+    inserted = updated = 0
+
+    async with aiosqlite.connect(DB_NAME) as db:
+        for it in items:
+            if it["id"]:
+                async with db.execute(
+                    "SELECT 1 FROM question_bank WHERE id = ?", (it["id"],)
+                ) as cursor:
+                    exists = await cursor.fetchone()
+                if not exists:
+                    errors.append(f"#{it['id']}: savol topilmadi")
+                    continue
+                await db.execute(
+                    """
+                    UPDATE question_bank
+                    SET subject = ?, level = ?, question = ?, option_a = ?, option_b = ?,
+                        option_c = ?, option_d = ?, correct = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        subject, level, it["question"],
+                        it["options"]["A"], it["options"]["B"],
+                        it["options"]["C"], it["options"]["D"],
+                        it["correct"], it["id"],
+                    ),
+                )
+                updated += 1
+            else:
+                await db.execute(
+                    """
+                    INSERT INTO question_bank
+                    (subject, level, question, option_a, option_b, option_c, option_d, correct, photo_id, source, created_by, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', 'admin', ?, ?)
+                    """,
+                    (
+                        subject, level, it["question"],
+                        it["options"]["A"], it["options"]["B"],
+                        it["options"]["C"], it["options"]["D"],
+                        it["correct"], message.from_user.id, time.time(),
+                    ),
+                )
+                inserted += 1
+        await db.commit()
+
+    await state.clear()
+    text = (
+        "✅ <b>Yuklash yakunlandi</b>\n\n"
+        f"➕ Yangi savollar: <b>{inserted}</b> ta\n"
+        f"✏️ Yangilangan: <b>{updated}</b> ta"
+    )
+    if errors:
+        text += f"\n\n⚠️ Xatoliklar: {len(errors)} ta\n" + "\n".join(
+            html.escape(e) for e in errors[:10]
+        )
+    await message.answer(text, reply_markup=bank_menu, parse_mode="HTML")
+
+
+@dp.message(UploadQuestions.waiting_file)
+async def qb_upload_hint(message: types.Message):
+    await message.answer("Iltimos, .txt fayl yuboring (yoki «❌ Bekor qilish»):")
+
+
+@dp.message(F.text == "✏️ Savolni tahrirlash")
+async def qb_edit_start(message: types.Message, state: FSMContext):
+    if not await is_admin(message.from_user):
+        return
+    await state.set_state(EditQuestion.waiting_id)
+    await message.answer(
+        "Tahrirlanadigan savolning <b>ID</b> raqamini kiriting:\n\n"
+        "<i>ID ni «📤 Eksport» faylidan yoki «📊 Statistika»dan bilib olish mumkin.</i>",
+        reply_markup=cancel_menu,
+        parse_mode="HTML",
+    )
+
+
+async def show_question_editor(message: types.Message, qid: int) -> bool:
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute(
+            """
+            SELECT id, subject, level, question, option_a, option_b, option_c, option_d, correct
+            FROM question_bank WHERE id = ?
+            """,
+            (qid,),
+        ) as cursor:
+            row = await cursor.fetchone()
+
+    if not row:
+        await message.answer("⚠️ Bunday ID li savol topilmadi.")
+        return False
+
+    qid, subject, level, question, a, b, c, d, correct = row
+    text = (
+        f"<b>#{qid}</b> — {SUBJECT_NAMES.get(subject, subject)} / {LEVEL_NAMES.get(level, level)}\n\n"
+        f"{html.escape(question)}\n\n"
+        f"<b>A)</b> {html.escape(a)}\n"
+        f"<b>B)</b> {html.escape(b)}\n"
+        f"<b>C)</b> {html.escape(c)}\n"
+        f"<b>D)</b> {html.escape(d)}\n\n"
+        f"✅ To‘g‘ri javob: <b>{correct}</b>\n\n"
+        "Qaysi maydonni o‘zgartiramiz?"
+    )
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Savol matni", callback_data=f"qe:{qid}:question")],
+            [
+                InlineKeyboardButton(text="A varianti", callback_data=f"qe:{qid}:a"),
+                InlineKeyboardButton(text="B varianti", callback_data=f"qe:{qid}:b"),
+            ],
+            [
+                InlineKeyboardButton(text="C varianti", callback_data=f"qe:{qid}:c"),
+                InlineKeyboardButton(text="D varianti", callback_data=f"qe:{qid}:d"),
+            ],
+            [
+                InlineKeyboardButton(text="To‘g‘ri javob", callback_data=f"qe:{qid}:correct"),
+                InlineKeyboardButton(text="Daraja", callback_data=f"qe:{qid}:level"),
+            ],
+            [InlineKeyboardButton(text="🗑 O‘chirish", callback_data=f"qe:{qid}:delete")],
+        ]
+    )
+    await message.answer(text, reply_markup=kb, parse_mode="HTML")
+    return True
+
+
+@dp.message(EditQuestion.waiting_id, F.text)
+async def qb_edit_load(message: types.Message, state: FSMContext):
+    if not message.text.strip().isdigit():
+        await message.answer("⚠️ Iltimos, faqat raqamdan iborat ID kiriting:")
+        return
+    qid = int(message.text.strip())
+    if await show_question_editor(message, qid):
+        await state.update_data(edit_id=qid, edit_field=None)
+        await state.set_state(EditQuestion.waiting_value)
+    else:
+        await message.answer("Qaytadan ID kiriting:")
+
+
+@dp.callback_query(F.data.startswith("qe:"))
+async def qb_edit_field(callback: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user):
+        await callback.answer("⛔️", show_alert=True)
+        return
+
+    _, sid, field = callback.data.split(":")
+    qid = int(sid)
+
+    if field == "cancel":
+        await state.clear()
+        await callback.message.edit_text("❌ Tahrirlash bekor qilindi.")
+        await callback.answer()
+        return
+
+    if field == "delete":
+        async with aiosqlite.connect(DB_NAME) as db:
+            await db.execute("DELETE FROM question_bank WHERE id = ?", (qid,))
+            await db.commit()
+        await state.clear()
+        await callback.message.edit_text(f"🗑 Savol #{qid} o‘chirildi.")
+        await callback.message.answer("Savollar bazasi:", reply_markup=bank_menu)
+        await callback.answer()
+        return
+
+    if field == "correct":
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="A", callback_data=f"qec:{qid}:A"),
+                    InlineKeyboardButton(text="B", callback_data=f"qec:{qid}:B"),
+                    InlineKeyboardButton(text="C", callback_data=f"qec:{qid}:C"),
+                    InlineKeyboardButton(text="D", callback_data=f"qec:{qid}:D"),
+                ]
+            ]
+        )
+        await callback.message.edit_text("Yangi to‘g‘ri javobni tanlang:", reply_markup=kb)
+        await callback.answer()
+        return
+
+    if field == "level":
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="🟢 Oson", callback_data=f"qel:{qid}:easy"),
+                    InlineKeyboardButton(text="🟡 O‘rtacha", callback_data=f"qel:{qid}:medium"),
+                ],
+                [InlineKeyboardButton(text="🔴 Qiyin", callback_data=f"qel:{qid}:hard")],
+            ]
+        )
+        await callback.message.edit_text("Yangi darajani tanlang:", reply_markup=kb)
+        await callback.answer()
+        return
+
+    prompts = {
+        "question": "Yangi savol matnini yuboring:",
+        "a": "Yangi A variantini yuboring:",
+        "b": "Yangi B variantini yuboring:",
+        "c": "Yangi C variantini yuboring:",
+        "d": "Yangi D variantini yuboring:",
+    }
+    if field not in prompts:
+        await callback.answer()
+        return
+
+    await state.update_data(edit_id=qid, edit_field=field)
+    await state.set_state(EditQuestion.waiting_value)
+    await callback.message.edit_text(prompts[field], reply_markup=InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="❌ Bekor qilish", callback_data="qe:0:cancel")]]
+    ))
+    await callback.answer()
+
+
+@dp.message(EditQuestion.waiting_value, F.text)
+async def qb_edit_save(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    qid = data.get("edit_id")
+    field = data.get("edit_field")
+    value = message.text.strip()
+
+    columns = {
+        "question": "question",
+        "a": "option_a",
+        "b": "option_b",
+        "c": "option_c",
+        "d": "option_d",
+    }
+
+    if not qid or field not in columns:
+        if qid and field is None:
+            await message.answer(
+                "Avval yuqoridagi tugmalardan qaysi maydonni o‘zgartirishni tanlang:"
+            )
+            return
+        await state.clear()
+        await message.answer("⚠️ Sessiya eskirgan.", reply_markup=bank_menu)
+        return
+
+    if not value:
+        await message.answer("Qiymat bo‘sh bo‘lmasligi kerak. Qaytadan:")
+        return
+
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(
+            f"UPDATE question_bank SET {columns[field]} = ? WHERE id = ?",
+            (value, qid),
+        )
+        await db.commit()
+
+    await state.clear()
+    await message.answer(f"✅ Savol #{qid} yangilandi.", reply_markup=bank_menu)
+
+
+@dp.message(F.text == "🗑 Savolni o'chirish")
+async def qb_delete_start(message: types.Message, state: FSMContext):
+    if not await is_admin(message.from_user):
+        return
+    await state.set_state(DeleteQuestions.waiting_ids)
+    await message.answer(
+        "O‘chiriladigan savol ID raqamlarini vergul bilan yozing (masalan: 12, 15, 103):",
+        reply_markup=cancel_menu,
+    )
+
+
+@dp.message(DeleteQuestions.waiting_ids, F.text)
+async def qb_delete(message: types.Message, state: FSMContext):
+    ids = [int(x) for x in re.findall(r"\d+", message.text)]
+    if not ids:
+        await message.answer("⚠️ Kamida bitta ID raqam kiriting:")
+        return
+
+    placeholders = ",".join("?" for _ in ids)
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            f"DELETE FROM question_bank WHERE id IN ({placeholders})", ids
+        )
+        deleted = cursor.rowcount
+        await db.commit()
+
+    await state.clear()
+    await message.answer(
+        f"🗑 <b>{deleted}</b> ta savol o‘chirildi.",
+        reply_markup=bank_menu,
+        parse_mode="HTML",
+    )
+
+
+@dp.message(F.text == "📤 Eksport")
+async def qb_export_start(message: types.Message, state: FSMContext):
+    if not await is_admin(message.from_user):
+        return
+    await state.clear()
+    await message.answer(
+        "Qaysi fan savollarini eksport qilamiz?",
+        reply_markup=get_bank_subject_kb("qx"),
+    )
+
+
+@dp.callback_query(F.data.startswith("qx:"))
+async def qb_export_subject(callback: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user):
+        await callback.answer("⛔️", show_alert=True)
+        return
+    subject = callback.data.split(":")[1]
+    if subject not in SUBJECT_NAMES:
+        await callback.answer()
+        return
+    await callback.message.edit_text(
+        f"{SUBJECT_NAMES[subject]} — darajani tanlang:",
+        reply_markup=get_bank_level_kb(f"qxl:{subject}"),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("qxl:"))
+async def qb_export_level(callback: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user):
+        await callback.answer("⛔️", show_alert=True)
+        return
+    _, subject, level = callback.data.split(":")
+    if subject not in SUBJECT_NAMES or level not in LEVEL_NAMES:
+        await callback.answer()
+        return
+
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute(
+            """
+            SELECT id, question, option_a, option_b, option_c, option_d, correct
+            FROM question_bank
+            WHERE subject = ? AND level = ?
+            ORDER BY id
+            """,
+            (subject, level),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    if not rows:
+        await callback.answer("Bu bo‘limda savollar yo‘q.", show_alert=True)
+        return
+
+    blocks = []
+    for qid, question, a, b, c, d, correct in rows:
+        blocks.append(
+            f"#ID {qid}\n{question}\nA) {a}\nB) {b}\nC) {c}\nD) {d}\nJavob: {correct}"
+        )
+    content = "\n\n".join(blocks)
+
+    await callback.answer()
+    await callback.message.answer_document(
+        BufferedInputFile(
+            content.encode("utf-8"), filename=f"{subject}_{level}.txt"
+        ),
+        caption=f"📤 {SUBJECT_NAMES[subject]} / {LEVEL_NAMES[level]} — {len(rows)} ta savol",
+    )
+
+
+@dp.callback_query(F.data.startswith("qec:"))
+async def qb_edit_correct_save(callback: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user):
+        await callback.answer("⛔️", show_alert=True)
+        return
+    _, sid, correct = callback.data.split(":")
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(
+            "UPDATE question_bank SET correct = ? WHERE id = ?", (correct, int(sid))
+        )
+        await db.commit()
+    await state.clear()
+    await callback.message.edit_text(f"✅ Savol #{sid} to‘g‘ri javobi: <b>{correct}</b>", parse_mode="HTML")
+    await callback.message.answer("Savollar bazasi:", reply_markup=bank_menu)
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("qel:"))
+async def qb_edit_level_save(callback: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user):
+        await callback.answer("⛔️", show_alert=True)
+        return
+    _, sid, level = callback.data.split(":")
+    if level not in LEVEL_NAMES:
+        await callback.answer()
+        return
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(
+            "UPDATE question_bank SET level = ? WHERE id = ?", (level, int(sid))
+        )
+        await db.commit()
+    await state.clear()
+    await callback.message.edit_text(
+        f"✅ Savol #{sid} darajasi: <b>{LEVEL_NAMES[level]}</b>", parse_mode="HTML"
+    )
+    await callback.message.answer("Savollar bazasi:", reply_markup=bank_menu)
+    await callback.answer()
+
+
+# ==================== MILLIY CEFR (MATEMATIKA) ====================
+@dp.message(F.text == "🇺🇿 Milliy CEFR")
+async def open_cefr(message: types.Message, state: FSMContext):
+    await state.clear()
+    if not await ensure_subscribed(message):
+        return
+
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute(
+            "SELECT id, title FROM cefr_docs ORDER BY id"
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    buttons = [
+        [InlineKeyboardButton(text=title or f"Hujjat #{doc_id}", callback_data=f"cefr:{doc_id}")]
+        for doc_id, title in rows
+    ]
+
+    admin_user = await is_admin(message.from_user)
+    if admin_user:
+        buttons.append(
+            [InlineKeyboardButton(text="➕ Hujjat qo‘shish", callback_data="cefr_add")]
+        )
+
+    text = (
+        "🇺🇿 <b>Milliy sertifikat — matematika (CEFR)</b>\n\n"
+        "Rasmiy imtihon variantlari. Har bir hujjat 45 ta topshiriqdan iborat bo‘lib, "
+        "yopiq va ochiq turdagi savollarni o‘z ichiga oladi.\n\n"
+        "<i>Hujjatni yuklab olib, qog‘ozda ishlashingiz mumkin.</i>"
+    )
+    if not rows:
+        text += "\n\n<i>Hozircha hujjat yuklanmagan.</i>"
+
+    if buttons:
+        await message.answer(
+            text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML"
+        )
+    else:
+        await message.answer(text, parse_mode="HTML")
+
+
+@dp.callback_query(F.data.startswith("cefr:"))
+async def cefr_send_doc(callback: types.CallbackQuery):
+    if not await ensure_subscribed_cb(callback):
+        return
+    doc_id = int(callback.data.split(":")[1])
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute(
+            "SELECT title, file_id FROM cefr_docs WHERE id = ?", (doc_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+
+    if not row or not row[1]:
+        await callback.answer("Hujjat topilmadi.", show_alert=True)
+        return
+
+    title, file_id = row
+    await callback.answer()
+    await callback.message.answer_document(
+        document=file_id,
+        caption=(
+            f"🇺🇿 <b>{html.escape(title)}</b>\n\n"
+            "45 ta topshiriq. Javoblaringizni javoblar varaqasiga yozing."
+        ),
+        parse_mode="HTML",
+    )
+
+
+@dp.callback_query(F.data == "cefr_add")
+async def cefr_add_start(callback: types.CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user):
+        await callback.answer("⛔️", show_alert=True)
+        return
+    await state.set_state(CefrAdd.waiting_doc)
+    await callback.answer()
+    await callback.message.answer(
+        "📄 Milliy CEFR bo‘limiga qo‘shiladigan PDF faylni yuboring:",
+        reply_markup=cancel_menu,
+    )
+
+
+@dp.message(CefrAdd.waiting_doc, F.document)
+async def cefr_add_doc(message: types.Message, state: FSMContext):
+    if not await is_admin(message.from_user):
+        return
+    await state.update_data(
+        file_id=message.document.file_id,
+        file_name=message.document.file_name or "",
+    )
+    await state.set_state(CefrAdd.waiting_title)
+    await message.answer("Hujjatga nom bering (masalan: «05.10.2025 — 1-smena»):")
+
+
+@dp.message(CefrAdd.waiting_doc)
+async def cefr_add_doc_hint(message: types.Message):
+    await message.answer("Iltimos, PDF hujjat yuboring (yoki «❌ Bekor qilish»):")
+
+
+@dp.message(CefrAdd.waiting_title, F.text)
+async def cefr_add_title(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    title = message.text.strip()
+    if not title:
+        await message.answer("Nom bo‘sh bo‘lmasligi kerak. Qaytadan:")
+        return
+
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(
+            "INSERT INTO cefr_docs (title, file_id, file_name, added_at) VALUES (?, ?, ?, ?)",
+            (title, data.get("file_id", ""), data.get("file_name", ""), time.time()),
+        )
+        await db.commit()
+
+    await state.clear()
+    await message.answer(
+        f"✅ «{html.escape(title)}» hujjati qo‘shildi.",
+        reply_markup=await get_main_menu(message.from_user),
+        parse_mode="HTML",
+    )
+
+
 # ==================== NOMA'LUM XABARLAR ====================
 @dp.message()
 async def default_handler(message: types.Message):
@@ -1312,6 +2701,7 @@ async def render_keep_alive_loop():
 # ==================== ISHGA TUSHIRISH ====================
 async def main():
     await init_db()
+    await seed_question_bank()
     await start_web_server()
     # Orqa fonda test muddatlarini doimiy tekshiruvchi vazifa
     asyncio.create_task(check_test_deadlines_loop())
