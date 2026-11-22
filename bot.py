@@ -1966,28 +1966,49 @@ async def _fetch_level_questions(db, subject: str, level: str, limit: int):
     ]
 
 
-async def fetch_practice_questions(subject: str, size: int):
-    """Har bir darajadan savollar olib, oson → o'rtacha → qiyin tartibida qaytaradi."""
-    counts = split_by_level(size)
-    questions = []
+async def _fetch_mixed_level(db, level: str, size: int):
+    """Aralash fan uchun bitta darajadagi savollarni matematika + geometriyadan yig'adi."""
+    geo_qs = await _fetch_level_questions(db, "geometry", level, size)
+    math_qs = await _fetch_level_questions(db, "math", level, size)
+    geo_need = min(len(geo_qs), size // 2)
+    math_need = min(len(math_qs), size - geo_need)
+    geo_need = min(len(geo_qs), size - math_need)
+    questions = math_qs[:math_need] + geo_qs[:geo_need]
+    random.shuffle(questions)
+    return questions
+
+
+async def fetch_practice_questions(subject: str, size: int, level: str = "mixed"):
+    """level: easy/medium/hard — faqat shu darajadan; mixed — uchala darajadan aralash."""
     async with connect_db() as db:
-        for level in PRACTICE_BLOCK_ORDER:
+        if level in LEVEL_NAMES:
             if subject == "mixed":
-                need = counts[level]
+                return await _fetch_mixed_level(db, level, size)
+            return await _fetch_level_questions(db, subject, level, size)
+
+        counts = split_by_level(size)
+        questions = []
+        for lv in PRACTICE_BLOCK_ORDER:
+            if subject == "mixed":
+                need = counts[lv]
                 geo_need = need // 2
-                level_qs = await _fetch_level_questions(db, "math", level, need - geo_need)
-                level_qs += await _fetch_level_questions(db, "geometry", level, geo_need)
+                level_qs = await _fetch_level_questions(db, "math", lv, need - geo_need)
+                level_qs += await _fetch_level_questions(db, "geometry", lv, geo_need)
                 random.shuffle(level_qs)
             else:
-                level_qs = await _fetch_level_questions(db, subject, level, counts[level])
+                level_qs = await _fetch_level_questions(db, subject, lv, counts[lv])
             questions.extend(level_qs)
     return questions
 
 
 async def begin_practice(
-    message: types.Message, state: FSMContext, subject: str, size: int = DEFAULT_PRACTICE_SIZE
+    message: types.Message,
+    state: FSMContext,
+    subject: str,
+    size: int = DEFAULT_PRACTICE_SIZE,
+    level: str = "mixed",
 ):
-    questions = await fetch_practice_questions(subject, size)
+    questions = await fetch_practice_questions(subject, size, level)
     if not questions:
         await message.answer(
             f"⚠️ <b>{PRACTICE_NAMES[subject]}</b> bo‘yicha savollar topilmadi.",
@@ -1997,21 +2018,27 @@ async def begin_practice(
 
     await state.set_state(PracticeTest.answering)
     await state.update_data(
-        subject=subject, size=size, questions=questions, index=0,
+        subject=subject, size=size, level=level, questions=questions, index=0,
         answers=[], photo_msg_id=0,
     )
 
     counts = {lv: sum(1 for q in questions if q["level"] == lv) for lv in PRACTICE_BLOCK_ORDER}
-    lines = "\n".join(
-        f"{LEVEL_BADGES[lv]} {LEVEL_NAMES[lv]}: {counts[lv]} ta"
-        for lv in PRACTICE_BLOCK_ORDER if counts[lv]
-    )
+    if level in LEVEL_NAMES:
+        lines = f"Daraja: {LEVEL_BADGES[level]} <b>{LEVEL_NAMES[level]}</b>"
+    else:
+        lines = "Tartib: <b>osondan qiyinga</b> (aralash emas).\n" + "\n".join(
+            f"{LEVEL_BADGES[lv]} {LEVEL_NAMES[lv]}: {counts[lv]} ta"
+            for lv in PRACTICE_BLOCK_ORDER if counts[lv]
+        )
     note = ""
     if len(questions) < size:
-        note = f"\n\n<i>Bazada yetarli savol yo‘q — {len(questions)} ta olindi.</i>"
+        if level in LEVEL_NAMES:
+            note = f"\n\n<i>Bazada bu darajada yetarli savol yo‘q — {len(questions)} ta olindi.</i>"
+        else:
+            note = f"\n\n<i>Bazada yetarli savol yo‘q — {len(questions)} ta olindi.</i>"
     await message.answer(
         f"🧠 <b>{PRACTICE_NAMES[subject]}</b> — bilim sinovi\n\n"
-        f"Tartib: <b>osondan qiyinga</b> (aralash emas).\n{lines}\n\n"
+        f"{lines}\n\n"
         f"Jami <b>{len(questions)} ta</b> savol. Omad!{note}",
         reply_markup=ReplyKeyboardRemove(),
         parse_mode="HTML",
@@ -2026,6 +2053,24 @@ def get_practice_count_kb(subject: str) -> InlineKeyboardMarkup:
             for n in PRACTICE_SIZES
         ],
         [InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"pcnt:{subject}:0")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def get_practice_level_kb(subject: str, size: int) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(text="🟢 Oson", callback_data=f"plv:{subject}:{size}:easy"),
+            InlineKeyboardButton(text="🟡 O‘rtacha", callback_data=f"plv:{subject}:{size}:medium"),
+        ],
+        [InlineKeyboardButton(text="🔴 Qiyin", callback_data=f"plv:{subject}:{size}:hard")],
+        [
+            InlineKeyboardButton(
+                text="🔀 Aralash (oson + o‘rta + qiyin)",
+                callback_data=f"plv:{subject}:{size}:mixed",
+            )
+        ],
+        [InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"plv:{subject}:{size}:cancel")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -2073,16 +2118,67 @@ async def practice_size_chosen(callback: types.CallbackQuery, state: FSMContext)
     if not await ensure_subscribed_cb(callback):
         return
 
+    size = int(raw)
+    try:
+        await callback.message.edit_text(
+            f"🧠 <b>{PRACTICE_NAMES[subject]}</b> — {size} ta savol\n\n"
+            f"Qiyinlik darajasini tanlang:",
+            reply_markup=get_practice_level_kb(subject, size),
+            parse_mode="HTML",
+        )
+    except TelegramBadRequest:
+        await callback.message.answer(
+            f"🧠 <b>{PRACTICE_NAMES[subject]}</b> — {size} ta savol\n\n"
+            f"Qiyinlik darajasini tanlang:",
+            reply_markup=get_practice_level_kb(subject, size),
+            parse_mode="HTML",
+        )
+
+
+@dp.callback_query(F.data.startswith("plv:"))
+async def practice_level_chosen(callback: types.CallbackQuery, state: FSMContext):
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer()
+        return
+
+    _, subject, raw, level = parts
+    await callback.answer()
+    if subject not in PRACTICE_SUBJECTS:
+        return
+
+    if not raw.isdigit():
+        return
+    size = int(raw)
+
+    if level == "cancel":
+        await state.clear()
+        try:
+            await callback.message.edit_text("❌ Bilim sinovi bekor qilindi.")
+        except TelegramBadRequest:
+            pass
+        await callback.message.answer(
+            "Asosiy menyu:", reply_markup=await get_main_menu(callback.from_user)
+        )
+        return
+
+    if level not in LEVEL_NAMES and level != "mixed":
+        return
+    if size not in PRACTICE_SIZES:
+        return
+    if not await ensure_subscribed_cb(callback):
+        return
+
     try:
         await callback.message.delete()
     except TelegramBadRequest:
         pass
-    await begin_practice(callback.message, state, subject, int(raw))
+    await begin_practice(callback.message, state, subject, size, level)
 
 
 @dp.callback_query(F.data.startswith("lv:"))
 async def choose_practice_level(callback: types.CallbackQuery, state: FSMContext):
-    # Eski xabarlardagi daraja tugmalari ham to'liq (oson→qiyin) sinovni boshlaydi
+    # Eski xabarlardagi daraja tugmalari: tanlangan darajadan sinov boshlanadi
     parts = callback.data.split(":")
     if len(parts) != 3:
         await callback.answer()
@@ -2112,7 +2208,8 @@ async def choose_practice_level(callback: types.CallbackQuery, state: FSMContext
         await callback.message.delete()
     except TelegramBadRequest:
         pass
-    await begin_practice(callback.message, state, subject, DEFAULT_PRACTICE_SIZE)
+    chosen_level = level if level in LEVEL_NAMES else "mixed"
+    await begin_practice(callback.message, state, subject, DEFAULT_PRACTICE_SIZE, chosen_level)
 
 
 async def send_practice_question(message: types.Message, state: FSMContext):
@@ -2257,7 +2354,7 @@ async def finish_practice(
                 callback.from_user.id,
                 callback.from_user.full_name or "Foydalanuvchi",
                 subject,
-                "mixed",
+                data.get("level", "mixed"),
                 correct_count,
                 total,
                 percent,
