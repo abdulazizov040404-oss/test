@@ -124,7 +124,7 @@
   "subject": "math",
   "level": "easy",
   "question": "6/12 kasrni qisqartiring.",
-  "option_a": "2/4",
+  "option_a": "1/2",
   "option_b": "3/4",
   "option_c": "4/2",
   "option_d": "2/5",
@@ -1502,7 +1502,7 @@
   "option_a": "13",
   "option_b": "14",
   "option_c": "11",
-  "option_d": "12",
+  "option_d": "24",
   "correct": "D",
   "source": "generated"
  },
@@ -2687,7 +2687,7 @@
   "subject": "math",
   "level": "easy",
   "question": "40 va 20 sonlarining EKUBini toping.",
-  "option_a": "10",
+  "option_a": "20",
   "option_b": "11",
   "option_c": "12",
   "option_d": "9",
@@ -3162,7 +3162,7 @@
   "question": "18 va 36 sonlarining EKUBini toping.",
   "option_a": "11",
   "option_b": "8",
-  "option_c": "9",
+  "option_c": "18",
   "option_d": "10",
   "correct": "C",
   "source": "generated"
@@ -5360,7 +5360,7 @@
   "subject": "math",
   "level": "easy",
   "question": "8/16 kasrni qisqartiring.",
-  "option_a": "2/4",
+  "option_a": "1/2",
   "option_b": "3/4",
   "option_c": "2/5",
   "option_d": "4/2",
@@ -6121,7 +6121,7 @@
   "question": "10/20 kasrni qisqartiring.",
   "option_a": "4/2",
   "option_b": "3/4",
-  "option_c": "2/4",
+  "option_c": "1/2",
   "option_d": "2/5",
   "correct": "C",
   "source": "generated"
@@ -6648,7 +6648,7 @@
   "level": "easy",
   "question": "12/24 kasrni qisqartiring.",
   "option_a": "4/2",
-  "option_b": "2/4",
+  "option_b": "1/2",
   "option_c": "2/5",
   "option_d": "3/4",
   "correct": "B",
@@ -6977,7 +6977,7 @@
   "subject": "math",
   "level": "easy",
   "question": "48 va 24 sonlarining EKUBini toping.",
-  "option_a": "12",
+  "option_a": "24",
   "option_b": "14",
   "option_c": "13",
   "option_d": "11",
@@ -8197,7 +8197,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "x² + 1x - 56 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² + x - 56 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "2",
   "option_b": "1",
   "option_c": "0",
@@ -8593,18 +8593,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "x² - 9 = 0 tenglamaning ildizlari yig‘indisini toping.",
-  "option_a": "2",
-  "option_b": "0",
-  "option_c": "1",
-  "option_d": "3",
-  "correct": "B",
-  "source": "generated"
- },
- {
-  "subject": "math",
-  "level": "medium",
-  "question": "x² + 1x - 20 = 0 tenglamaning ildizlari ko‘paytmasini toping.",
+  "question": "x² + x - 20 = 0 tenglamaning ildizlari ko‘paytmasini toping.",
   "option_a": "-20",
   "option_b": "-21",
   "option_c": "-19",
@@ -9176,7 +9165,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "f(x) = 2x + 0 bo‘lsa, f(4) ni toping.",
+  "question": "f(x) = 2x bo‘lsa, f(4) ni toping.",
   "option_a": "10",
   "option_b": "11",
   "option_c": "9",
@@ -11101,7 +11090,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "x² - 1x - 42 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - x - 42 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "1",
   "option_b": "2",
   "option_c": "3",
@@ -11629,7 +11618,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "x² + 1x - 20 = 0 tenglamaning diskriminantini toping.",
+  "question": "x² + x - 20 = 0 tenglamaning diskriminantini toping.",
   "option_a": "83",
   "option_b": "81",
   "option_c": "80",
@@ -12168,17 +12157,6 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "x² - 4 = 0 tenglamaning ildizlari yig‘indisini toping.",
-  "option_a": "1",
-  "option_b": "2",
-  "option_c": "3",
-  "option_d": "0",
-  "correct": "D",
-  "source": "generated"
- },
- {
-  "subject": "math",
-  "level": "medium",
   "question": "Ikki sonning yig‘indisi 33, ayirmasi 9. Katta sonni toping.",
   "option_a": "22",
   "option_b": "21",
@@ -12542,7 +12520,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "x² - 1x - 56 = 0 tenglamaning diskriminantini toping.",
+  "question": "x² - x - 56 = 0 tenglamaning diskriminantini toping.",
   "option_a": "225",
   "option_b": "325",
   "option_c": "215",
@@ -13037,7 +13015,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "x² + 1x - 72 = 0 tenglamaning diskriminantini toping.",
+  "question": "x² + x - 72 = 0 tenglamaning diskriminantini toping.",
   "option_a": "389",
   "option_b": "279",
   "option_c": "299",
@@ -13543,7 +13521,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "x² + 1x - 56 = 0 tenglamaning diskriminantini toping.",
+  "question": "x² + x - 56 = 0 tenglamaning diskriminantini toping.",
   "option_a": "215",
   "option_b": "225",
   "option_c": "325",
@@ -13824,17 +13802,6 @@
   "option_c": "66",
   "option_d": "65",
   "correct": "D",
-  "source": "generated"
- },
- {
-  "subject": "math",
-  "level": "medium",
-  "question": "x² - 16 = 0 tenglamaning ildizlari yig‘indisini toping.",
-  "option_a": "3",
-  "option_b": "2",
-  "option_c": "0",
-  "option_d": "1",
-  "correct": "C",
   "source": "generated"
  },
  {
@@ -14720,7 +14687,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "x² - 1x - 42 = 0 tenglamaning diskriminantini toping.",
+  "question": "x² - x - 42 = 0 tenglamaning diskriminantini toping.",
   "option_a": "170",
   "option_b": "171",
   "option_c": "168",
@@ -15490,7 +15457,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = 5x² - 1x + 3 bo‘lsa, f′(-5) ni toping.",
+  "question": "f(x) = 5x² - x + 3 bo‘lsa, f′(-5) ni toping.",
   "option_a": "-52",
   "option_b": "-49",
   "option_c": "-51",
@@ -15534,7 +15501,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = x² - 2x + 0 bo‘lsa, f(4) ni toping.",
+  "question": "f(x) = x² - 2x bo‘lsa, f(4) ni toping.",
   "option_a": "8",
   "option_b": "10",
   "option_c": "11",
@@ -15754,7 +15721,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = 6x² + 8x + 0 bo‘lsa, f′(-2) ni toping.",
+  "question": "f(x) = 6x² + 8x bo‘lsa, f′(-2) ni toping.",
   "option_a": "-14",
   "option_b": "-15",
   "option_c": "-16",
@@ -16876,7 +16843,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = 2x² + 0x - 5 bo‘lsa, f′(4) ni toping.",
+  "question": "f(x) = 2x² - 5 bo‘lsa, f′(4) ni toping.",
   "option_a": "18",
   "option_b": "16",
   "option_c": "17",
@@ -16920,7 +16887,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = x² + 0x + 6 bo‘lsa, f(-2) ni toping.",
+  "question": "f(x) = x² + 6 bo‘lsa, f(-2) ni toping.",
   "option_a": "12",
   "option_b": "11",
   "option_c": "10",
@@ -17525,7 +17492,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² - 1x - 6 = 0 tenglamaning katta ildizini toping.",
+  "question": "x² - x - 6 = 0 tenglamaning katta ildizini toping.",
   "option_a": "4",
   "option_b": "3",
   "option_c": "5",
@@ -17536,7 +17503,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² + 1x - 56 = 0 tenglamaning katta ildizini toping.",
+  "question": "x² + x - 56 = 0 tenglamaning katta ildizini toping.",
   "option_a": "9",
   "option_b": "7",
   "option_c": "10",
@@ -17569,7 +17536,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = 2x² - 1x - 1 bo‘lsa, f′(-2) ni toping.",
+  "question": "f(x) = 2x² - x - 1 bo‘lsa, f′(-2) ni toping.",
   "option_a": "-7",
   "option_b": "-9",
   "option_c": "-8",
@@ -17921,7 +17888,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² + 1x - 30 = 0 tenglamaning katta ildizini toping.",
+  "question": "x² + x - 30 = 0 tenglamaning katta ildizini toping.",
   "option_a": "8",
   "option_b": "5",
   "option_c": "7",
@@ -17932,7 +17899,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = 3x² + 1x + 2 bo‘lsa, f′(-3) ni toping.",
+  "question": "f(x) = 3x² + x + 2 bo‘lsa, f′(-3) ni toping.",
   "option_a": "-18",
   "option_b": "-17",
   "option_c": "-16",
@@ -18350,7 +18317,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = 2x² - 1x + 0 bo‘lsa, f′(-1) ni toping.",
+  "question": "f(x) = 2x² - x bo‘lsa, f′(-1) ni toping.",
   "option_a": "-5",
   "option_b": "-3",
   "option_c": "-4",
@@ -18581,7 +18548,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = x² + 0x - 6 bo‘lsa, f(1) ni toping.",
+  "question": "f(x) = x² - 6 bo‘lsa, f(1) ni toping.",
   "option_a": "-4",
   "option_b": "-5",
   "option_c": "-3",
@@ -18625,7 +18592,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = 3x² + 0x + 5 bo‘lsa, f′(-4) ni toping.",
+  "question": "f(x) = 3x² + 5 bo‘lsa, f′(-4) ni toping.",
   "option_a": "-24",
   "option_b": "-23",
   "option_c": "-22",
@@ -18768,7 +18735,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = x² + 7x + 0 bo‘lsa, f(-5) ni toping.",
+  "question": "f(x) = x² + 7x bo‘lsa, f(-5) ni toping.",
   "option_a": "-8",
   "option_b": "-11",
   "option_c": "-9",
@@ -18801,7 +18768,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² - 1x - 72 = 0 tenglamaning katta ildizini toping.",
+  "question": "x² - x - 72 = 0 tenglamaning katta ildizini toping.",
   "option_a": "9",
   "option_b": "10",
   "option_c": "12",
@@ -18900,7 +18867,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² - 1x - 30 = 0 tenglamaning katta ildizini toping.",
+  "question": "x² - x - 30 = 0 tenglamaning katta ildizini toping.",
   "option_a": "9",
   "option_b": "6",
   "option_c": "8",
@@ -18988,7 +18955,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² + 1x - 42 = 0 tenglamaning katta ildizini toping.",
+  "question": "x² + x - 42 = 0 tenglamaning katta ildizini toping.",
   "option_a": "7",
   "option_b": "9",
   "option_c": "6",
@@ -19076,7 +19043,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = 3x² + 2x + 0 bo‘lsa, f′(-2) ni toping.",
+  "question": "f(x) = 3x² + 2x bo‘lsa, f′(-2) ni toping.",
   "option_a": "-10",
   "option_b": "-8",
   "option_c": "-9",
@@ -19109,7 +19076,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = x² + 1x - 2 bo‘lsa, f(3) ni toping.",
+  "question": "f(x) = x² + x - 2 bo‘lsa, f(3) ni toping.",
   "option_a": "9",
   "option_b": "10",
   "option_c": "12",
@@ -19252,7 +19219,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² - 1x - 12 = 0 tenglamaning katta ildizini toping.",
+  "question": "x² - x - 12 = 0 tenglamaning katta ildizini toping.",
   "option_a": "7",
   "option_b": "6",
   "option_c": "4",
@@ -19901,7 +19868,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = 2x² + 5x + 0 bo‘lsa, f′(-4) ni toping.",
+  "question": "f(x) = 2x² + 5x bo‘lsa, f′(-4) ni toping.",
   "option_a": "-12",
   "option_b": "-10",
   "option_c": "-9",
@@ -20000,7 +19967,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = 5x² + 8x + 0 bo‘lsa, f′(5) ni toping.",
+  "question": "f(x) = 5x² + 8x bo‘lsa, f′(5) ni toping.",
   "option_a": "60",
   "option_b": "57",
   "option_c": "59",
@@ -20209,7 +20176,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = 6x² - 4x + 0 bo‘lsa, f′(3) ni toping.",
+  "question": "f(x) = 6x² - 4x bo‘lsa, f′(3) ni toping.",
   "option_a": "31",
   "option_b": "32",
   "option_c": "34",
@@ -20440,7 +20407,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = x² + 0x - 5 bo‘lsa, f(-4) ni toping.",
+  "question": "f(x) = x² - 5 bo‘lsa, f(-4) ni toping.",
   "option_a": "13",
   "option_b": "11",
   "option_c": "10",
@@ -20539,7 +20506,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² + 1x - 6 = 0 tenglamaning katta ildizini toping.",
+  "question": "x² + x - 6 = 0 tenglamaning katta ildizini toping.",
   "option_a": "4",
   "option_b": "5",
   "option_c": "3",
@@ -21254,7 +21221,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = x² + 0x + 4 bo‘lsa, f(-3) ni toping.",
+  "question": "f(x) = x² + 4 bo‘lsa, f(-3) ni toping.",
   "option_a": "15",
   "option_b": "13",
   "option_c": "12",
@@ -21892,7 +21859,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² + 1x - 2 = 0 tenglamaning katta ildizini toping.",
+  "question": "x² + x - 2 = 0 tenglamaning katta ildizini toping.",
   "option_a": "3",
   "option_b": "1",
   "option_c": "4",

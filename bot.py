@@ -27,24 +27,48 @@ from aiogram.types import (
 )
 
 # ==================== SOZLAMALAR ====================
-TOKEN = "9055733774:AAHIr8SxoXOTmz_nECP6VAIS8TtuKMmQI7U"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TOKEN = os.environ.get("BOT_TOKEN", "9055733774:AAHIr8SxoXOTmz_nECP6VAIS8TtuKMmQI7U")
 CHANNEL_ID = "@etest14"
 CHANNEL_URL = "https://t.me/etest14"
-DB_NAME = "tests_rasch.db"
+# Render'da persistent disk yo'lini DB_PATH orqali bering:
+DB_NAME = os.environ.get("DB_PATH") or os.path.join(BASE_DIR, "tests_rasch.db")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SEED_FILES = [
     os.path.join(BASE_DIR, "seed_questions.json"),
     os.path.join(BASE_DIR, "seed_generated.json"),
+    os.path.join(BASE_DIR, "seed_curriculum.json"),
 ]
 
-SUBJECT_NAMES = {"english": "Ingliz tili", "math": "Matematika"}
+SUBJECT_NAMES = {
+    "english": "Ingliz tili",
+    "math": "Matematika",
+    "geometry": "Geometriya",
+}
+PRACTICE_NAMES = {**SUBJECT_NAMES, "mixed": "Aralash (Matematika + Geometriya)"}
 LEVEL_NAMES = {"easy": "Oson", "medium": "O‘rtacha", "hard": "Qiyin"}
-PRACTICE_VARIANT_SIZE = {"english": 30, "math": 45}
+LEVEL_BADGES = {"easy": "🟢", "medium": "🟡", "hard": "🔴"}
+PRACTICE_SIZES = (10, 20, 30, 45)
+DEFAULT_PRACTICE_SIZE = 30
+
+GEOMETRY_RE = re.compile(
+    r"(perimetr|yuzini|yuzasi|\byuza|hajmini|\bhajm|aylana|doira|shar(?!q)|kub|konus|"
+    r"silindr|parallelepiped|trapes|romb|parallelogramm|uchburchak|to‘rtburchak|"
+    r"burchak|gradus|kesma|vatar|urinma|prizma|piramida|sfera|geometriya|pifagor|"
+    r"gipotenuza|katet|diagonal|koordinata)",
+    re.I,
+)
+
+
+def is_geometry_question(text: str) -> bool:
+    """Matematika bazasidagi geometriyaga oid savolni aniqlaydi."""
+    t = (text or "").lower()
+    if "ehtimol" in t or "sharq" in t or "koeffitsiyent" in t:
+        return False
+    return bool(GEOMETRY_RE.search(t))
 
 # Bosh admin (Super Admin)
 SUPER_ADMIN_IDS = [7041478070]
-SUPER_ADMIN_USERNAMES = ["durbek_coder"]
 
 # O'zbekiston (Toshkent) vaqt mintaqasi (UTC+5)
 TIMEZONE_UZ = datetime.timezone(datetime.timedelta(hours=5))
@@ -52,6 +76,36 @@ TIMEZONE_UZ = datetime.timezone(datetime.timedelta(hours=5))
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
+
+FINALIZING_TESTS: set[str] = set()
+
+
+def connect_db():
+    return aiosqlite.connect(DB_NAME, timeout=15)
+
+
+def chunk_text(text: str, limit: int = 4000) -> list[str]:
+    """Matnni qator chegaralarida bo'laklarga bo'ladi (HTML teglar buzilmaydi)."""
+    if len(text) <= limit:
+        return [text]
+    parts = []
+    for line in text.split("\n"):
+        while len(line) > limit:
+            parts.append(line[:limit])
+            line = line[limit:]
+        parts.append(line)
+    chunks, current = [], ""
+    for part in parts:
+        if not current:
+            current = part
+        elif len(current) + 1 + len(part) <= limit:
+            current += "\n" + part
+        else:
+            chunks.append(current)
+            current = part
+    if current:
+        chunks.append(current)
+    return chunks or [text]
 
 
 def format_uz_time(ts: float) -> str:
@@ -116,7 +170,13 @@ def calculate_rasch(user_responses: list[int], difficulties: list[float]):
 
 # ==================== MA'LUMOTLAR BAZASI VA HUQUQLAR ====================
 async def init_db():
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
+        try:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA synchronous=NORMAL")
+        except Exception as e:
+            logging.warning(f"WAL rejimini yoqishda ogohlantirish: {e}")
+
         # Testlar jadvali
         await db.execute("""
             CREATE TABLE IF NOT EXISTS tests (
@@ -131,6 +191,7 @@ async def init_db():
                 duration_minutes INTEGER DEFAULT 60,
                 end_time REAL DEFAULT 0,
                 is_finished INTEGER DEFAULT 0,
+                results_posted INTEGER DEFAULT 0,
                 created_at REAL DEFAULT 0
             )
         """)
@@ -150,6 +211,8 @@ async def init_db():
                 await db.execute("ALTER TABLE tests ADD COLUMN is_finished INTEGER DEFAULT 0")
             if "created_at" not in cols:
                 await db.execute("ALTER TABLE tests ADD COLUMN created_at REAL DEFAULT 0")
+            if "results_posted" not in cols:
+                await db.execute("ALTER TABLE tests ADD COLUMN results_posted INTEGER DEFAULT 0")
 
         # Natijalar jadvali
         await db.execute("""
@@ -165,7 +228,8 @@ async def init_db():
                 correct_count INTEGER DEFAULT 0,
                 total_q INTEGER DEFAULT 0,
                 grade TEXT DEFAULT '',
-                is_notified INTEGER DEFAULT 0
+                is_notified INTEGER DEFAULT 0,
+                is_submitted INTEGER DEFAULT 1
             )
         """)
 
@@ -178,6 +242,24 @@ async def init_db():
                 await db.execute("ALTER TABLE results ADD COLUMN submitted_at REAL DEFAULT 0")
             if "is_notified" not in cols:
                 await db.execute("ALTER TABLE results ADD COLUMN is_notified INTEGER DEFAULT 0")
+            if "is_submitted" not in cols:
+                await db.execute("ALTER TABLE results ADD COLUMN is_submitted INTEGER DEFAULT 1")
+
+        # Eski takroriy natijalarni tozalash (unikal indeks uchun)
+        try:
+            await db.execute(
+                "DELETE FROM results WHERE id NOT IN (SELECT MAX(id) FROM results GROUP BY test_code, user_id)"
+            )
+        except Exception as e:
+            logging.warning(f"Takroriy natijalarni tozalashda xatolik: {e}")
+
+        # Bir foydalanuvchi bir testga faqat bitta natija yozishi uchun
+        try:
+            await db.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_results_unique ON results(test_code, user_id)"
+            )
+        except Exception as e:
+            logging.warning(f"results unikal indeksi yaratilmadi: {e}")
 
         # Adminlar jadvali
         await db.execute("""
@@ -232,9 +314,14 @@ async def init_db():
                 title TEXT DEFAULT '',
                 file_id TEXT DEFAULT '',
                 file_name TEXT DEFAULT '',
+                subject TEXT DEFAULT 'math',
                 added_at REAL DEFAULT 0
             )
         """)
+        async with db.execute("PRAGMA table_info(cefr_docs)") as cursor:
+            cefr_cols = [row[1] for row in await cursor.fetchall()]
+        if "subject" not in cefr_cols:
+            await db.execute("ALTER TABLE cefr_docs ADD COLUMN subject TEXT DEFAULT 'math'")
 
         await db.execute("CREATE INDEX IF NOT EXISTS idx_qb_subject_level ON question_bank(subject, level)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_tests_code ON tests(code)")
@@ -245,66 +332,174 @@ async def init_db():
 async def is_super_admin(user) -> bool:
     if isinstance(user, int):
         return user in SUPER_ADMIN_IDS
-    if not user:
-        return False
-    if getattr(user, "id", None) in SUPER_ADMIN_IDS:
-        return True
-    username = getattr(user, "username", None)
-    if username and username.lower().replace("@", "") in [u.lower() for u in SUPER_ADMIN_USERNAMES]:
-        if user.id not in SUPER_ADMIN_IDS:
-            SUPER_ADMIN_IDS.append(user.id)
-        return True
-    return False
+    return bool(user) and getattr(user, "id", None) in SUPER_ADMIN_IDS
 
 
 async def is_admin(user) -> bool:
     if await is_super_admin(user):
         return True
     uid = user if isinstance(user, int) else getattr(user, "id", 0)
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         async with db.execute("SELECT 1 FROM admins WHERE user_id = ?", (uid,)) as cursor:
             row = await cursor.fetchone()
             return bool(row)
 
 
+def norm_question(text: str) -> str:
+    return " ".join((text or "").split()).lower()
+
+
+def escape_mojibake(text: str) -> str:
+    """Eski seed fayllardan tushgan (cid:...) belgilarini tiklaydi."""
+    return (text or "").replace("(cid:214)", "√")
+
+
+async def repair_db():
+    """Eski bazadagi to'ldirilmagan maydonlarni va manglangan savollarni tuzatadi."""
+    now = time.time()
+    async with connect_db() as db:
+        # results: bo'sh qiymatlarni to'ldirish
+        await db.execute("UPDATE results SET user_answers = '' WHERE user_answers IS NULL")
+        await db.execute("UPDATE results SET total_q = 0 WHERE total_q IS NULL")
+        await db.execute("UPDATE results SET submitted_at = 0 WHERE submitted_at IS NULL")
+        await db.execute("UPDATE results SET is_submitted = 1 WHERE is_submitted IS NULL")
+
+        # tests: vaqtlarni tiklash
+        await db.execute(
+            "UPDATE tests SET duration_minutes = 60 WHERE duration_minutes IS NULL OR duration_minutes <= 0"
+        )
+        await db.execute(
+            "UPDATE tests SET created_at = end_time - duration_minutes * 60 "
+            "WHERE (created_at IS NULL OR created_at = 0) AND end_time > 0"
+        )
+        # Vaqti noma'lum eski testlar: ularni yakunlangan deb belgilaymiz (kanalga spam bo'lmasin)
+        await db.execute(
+            "UPDATE tests SET created_at = ?, end_time = ?, is_finished = 1, results_posted = 1 "
+            "WHERE (created_at IS NULL OR created_at = 0) AND (end_time IS NULL OR end_time = 0)",
+            (now, now - 1),
+        )
+        await db.execute(
+            "UPDATE tests SET end_time = created_at + duration_minutes * 60 "
+            "WHERE (end_time IS NULL OR end_time = 0) AND created_at > 0"
+        )
+        await db.execute(
+            "UPDATE tests SET content_type = 'photo' "
+            "WHERE content_type IS NULL OR content_type NOT IN ('photo', 'document', 'text')"
+        )
+        await db.execute("UPDATE tests SET content_text = '' WHERE content_text IS NULL")
+        await db.execute("UPDATE tests SET is_finished = 0 WHERE is_finished IS NULL")
+        await db.execute("UPDATE tests SET results_posted = 0 WHERE results_posted IS NULL")
+
+        # question_bank: belgilarni tiklash va bo'sh joylarni tozalash
+        for col in ("question", "option_a", "option_b", "option_c", "option_d"):
+            try:
+                await db.execute(f"UPDATE question_bank SET {col} = REPLACE({col}, '(cid:214)', '√')")
+            except Exception:
+                pass
+        try:
+            await db.execute(
+                "UPDATE question_bank SET source = 'legacy-fix' "
+                "WHERE question LIKE '%(cid:%' AND source != 'admin'"
+            )
+            async with db.execute(
+                "SELECT id, question, option_a, option_b, option_c, option_d FROM question_bank"
+            ) as cursor:
+                for qid, q, a, b, c, d in await cursor.fetchall():
+                    clean = tuple(" ".join((v or "").split()) for v in (q, a, b, c, d))
+                    if clean != (q, a, b, c, d):
+                        await db.execute(
+                            "UPDATE question_bank SET question = ?, option_a = ?, option_b = ?, "
+                            "option_c = ?, option_d = ? WHERE id = ?",
+                            (*clean, qid),
+                        )
+        except Exception as e:
+            logging.warning(f"question_bank normalizatsiyasida xatolik: {e}")
+
+        # Matematika bazasidagi geometriya savollarini alohida fanga ko'chirish
+        try:
+            async with db.execute(
+                "SELECT id, question FROM question_bank WHERE subject = 'math'"
+            ) as cursor:
+                geom_ids = [
+                    qid for qid, q in await cursor.fetchall()
+                    if is_geometry_question(q)
+                ]
+            for qid in geom_ids:
+                await db.execute(
+                    "UPDATE question_bank SET subject = 'geometry' WHERE id = ?", (qid,)
+                )
+            if geom_ids:
+                logging.info(f"Geometriyaga ko'chirildi: {len(geom_ids)} ta savol.")
+        except Exception as e:
+            logging.warning(f"geometry migratsiyasida xatolik: {e}")
+
+        await db.commit()
+
+
 async def seed_question_bank():
-    """Seed fayllardan bazada yo'q savollarni yuklaydi (qayta ishga tushirishda ham)."""
-    async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute("SELECT subject, question FROM question_bank") as cursor:
+    """Seed fayllardan yangi savollarni qo'shadi va mavjudlaridagi xato javoblarni tuzatadi."""
+    async with connect_db() as db:
+        async with db.execute(
+            "SELECT id, subject, level, question, option_a, option_b, option_c, option_d, correct, source "
+            "FROM question_bank"
+        ) as cursor:
             rows = await cursor.fetchall()
-        existing = {(s, " ".join(q.split()).lower()) for s, q in rows}
+        existing = {}
+        for r in rows:
+            existing[(r[1], norm_question(r[3]))] = r
+
         now = time.time()
         added = 0
+        fixed = 0
         for seed_file in SEED_FILES:
             if not os.path.exists(seed_file):
                 logging.warning(f"Seed fayl topilmadi: {seed_file}")
                 continue
             with open(seed_file, "r", encoding="utf-8") as f:
                 items = json.load(f)
-            rows = []
             for it in items:
-                key = (it["subject"], " ".join(it["question"].split()).lower())
-                if key in existing:
+                subject = it["subject"]
+                if subject == "math" and is_geometry_question(it["question"]):
+                    subject = "geometry"
+                key = (subject, norm_question(it["question"]))
+                row = existing.get(key)
+                if row is None:
+                    await db.execute(
+                        """
+                        INSERT INTO question_bank
+                        (subject, level, question, option_a, option_b, option_c, option_d, correct, photo_id, source, created_by, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, 0, ?)
+                        """,
+                        (
+                            subject, it["level"], it["question"],
+                            it["option_a"], it["option_b"], it["option_c"], it["option_d"],
+                            it["correct"], it.get("source", "seed"), now,
+                        ),
+                    )
+                    added += 1
+                    existing[key] = (None, subject, it["level"], it["question"],
+                                     it["option_a"], it["option_b"], it["option_c"],
+                                     it["option_d"], it["correct"], it.get("source", "seed"))
                     continue
-                existing.add(key)
-                rows.append((
-                    it["subject"], it["level"], it["question"],
+
+                if row[9] == "admin":
+                    continue
+
+                new_vals = (
+                    it["level"], it["question"],
                     it["option_a"], it["option_b"], it["option_c"], it["option_d"],
-                    it["correct"], it.get("source", "seed"), now,
-                ))
-            if rows:
-                await db.executemany(
-                    """
-                    INSERT INTO question_bank
-                    (subject, level, question, option_a, option_b, option_c, option_d, correct, photo_id, source, created_by, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, 0, ?)
-                    """,
-                    rows,
+                    it["correct"],
                 )
-                added += len(rows)
+                if tuple(row[2:9]) != new_vals:
+                    await db.execute(
+                        "UPDATE question_bank SET level = ?, question = ?, option_a = ?, option_b = ?, "
+                        "option_c = ?, option_d = ?, correct = ? WHERE id = ?",
+                        (*new_vals, row[0]),
+                    )
+                    fixed += 1
         await db.commit()
-        if added:
-            logging.info(f"Savollar bazasiga {added} ta yangi savol qo'shildi.")
+        if added or fixed:
+            logging.info(f"Savollar bazasi: {added} ta qo'shildi, {fixed} ta tuzatildi.")
 
 
 # ==================== MAJBURIY OBUNA ====================
@@ -431,6 +626,10 @@ async def get_main_menu(user) -> ReplyKeyboardMarkup:
             KeyboardButton(text="📘 Ingliz tili"),
             KeyboardButton(text="➗ Matematika"),
         ],
+        [
+            KeyboardButton(text="📐 Geometriya"),
+            KeyboardButton(text="🔀 Aralash"),
+        ],
         [KeyboardButton(text="🇺🇿 Milliy CEFR")],
         [KeyboardButton(text="📊 Javoblar va o‘rinlar")],
     ]
@@ -492,19 +691,6 @@ bank_menu = ReplyKeyboardMarkup(
 )
 
 
-def get_level_keyboard(subject: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="🟢 Oson", callback_data=f"lv:{subject}:easy"),
-                InlineKeyboardButton(text="🟡 O‘rtacha", callback_data=f"lv:{subject}:medium"),
-            ],
-            [InlineKeyboardButton(text="🔴 Qiyin", callback_data=f"lv:{subject}:hard")],
-            [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="lv:cancel")],
-        ]
-    )
-
-
 def get_bank_subject_kb(prefix: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -512,6 +698,7 @@ def get_bank_subject_kb(prefix: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="📘 Ingliz tili", callback_data=f"{prefix}:english"),
                 InlineKeyboardButton(text="➗ Matematika", callback_data=f"{prefix}:math"),
             ],
+            [InlineKeyboardButton(text="📐 Geometriya", callback_data=f"{prefix}:geometry")],
             [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="qb:cancel")],
         ]
     )
@@ -543,7 +730,7 @@ def get_correct_kb(prefix: str) -> InlineKeyboardMarkup:
     )
 
 
-def get_options_keyboard(current_q: int, total_q: int):
+def get_options_keyboard(current_q: int = 1, total_q: int = 0):
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -553,7 +740,12 @@ def get_options_keyboard(current_q: int, total_q: int):
                 InlineKeyboardButton(text="D", callback_data="ans_D"),
             ],
             [
-                InlineKeyboardButton(text="❌ Testni to‘xtatish", callback_data="ans_cancel"),
+                InlineKeyboardButton(text="🏁 Testni tugatish", callback_data="ans_finish"),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⏸ Chiqish (javoblar saqlanadi)", callback_data="ans_exit"
+                ),
             ],
         ]
     )
@@ -600,7 +792,7 @@ async def open_admin_panel(message: types.Message, state: FSMContext):
         await message.answer("⛔️ Bu bo‘lim faqat Super Admin uchun!", reply_markup=await get_main_menu(message.from_user))
         return
 
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         async with db.execute("SELECT user_id, name, added_at FROM admins ORDER BY id ASC") as cursor:
             admins = await cursor.fetchall()
 
@@ -651,7 +843,7 @@ async def process_add_admin(message: types.Message, state: FSMContext):
         await message.answer("Ushbu foydalanuvchi allaqachon Super Admin hisoblanadi!")
         return
 
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         try:
             await db.execute(
                 "INSERT INTO admins (user_id, name, added_by) VALUES (?, ?, ?)",
@@ -702,7 +894,7 @@ async def process_del_admin(message: types.Message, state: FSMContext):
         return
 
     del_id = int(text)
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         await db.execute("DELETE FROM admins WHERE user_id = ?", (del_id,))
         await db.commit()
 
@@ -724,7 +916,7 @@ async def cmd_addadmin(message: types.Message):
         await message.answer("Foydalanish: <code>/addadmin &lt;TELEGRAM_ID&gt;</code>", parse_mode="HTML")
         return
     new_id = int(args[1])
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         try:
             await db.execute(
                 "INSERT INTO admins (user_id, name, added_by) VALUES (?, ?, ?)",
@@ -745,7 +937,7 @@ async def cmd_deladmin(message: types.Message):
         await message.answer("Foydalanish: <code>/deladmin &lt;TELEGRAM_ID&gt;</code>", parse_mode="HTML")
         return
     del_id = int(args[1])
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         await db.execute("DELETE FROM admins WHERE user_id = ?", (del_id,))
         await db.commit()
     await message.answer(f"✅ Admin <code>{del_id}</code> o‘chirildi.", parse_mode="HTML")
@@ -935,7 +1127,7 @@ async def get_test_duration(message: types.Message, state: FSMContext):
     end_time = created_at + (duration_minutes * 60)
 
     # Unikal Test ID generatsiya qilish
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         while True:
             test_code = str(random.randint(10000, 99999))
             async with db.execute("SELECT 1 FROM tests WHERE code = ?", (test_code,)) as cursor:
@@ -981,17 +1173,276 @@ async def get_test_duration(message: types.Message, state: FSMContext):
 
 
 # ==================== TEST YECHISH ====================
+def get_test_list_kb(tests) -> InlineKeyboardMarkup:
+    rows = []
+    now = time.time()
+    for code, answers, end_time in tests:
+        rem_min = max(1, int(end_time - now) // 60) if end_time else 0
+        rows.append([
+            InlineKeyboardButton(
+                text=f"🟢 {code} · {len(answers)} savol · {rem_min} daq",
+                callback_data=f"tsel:{code}",
+            )
+        ])
+    rows.append([InlineKeyboardButton(text="✍️ ID raqam bilan kirish", callback_data="tsel:manual")])
+    rows.append([InlineKeyboardButton(text="❌ Bekor qilish", callback_data="tsel:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def save_test_result(test_code, user_id, user_name, answers_str, total_q, submitted=False):
+    now = time.time()
+    async with connect_db() as db:
+        await db.execute(
+            """
+            INSERT INTO results (test_code, user_id, user_name, user_answers, submitted_at, total_q, is_notified, is_submitted)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+            ON CONFLICT(test_code, user_id) DO UPDATE SET
+                user_name = excluded.user_name,
+                user_answers = excluded.user_answers,
+                submitted_at = CASE WHEN excluded.submitted_at > 0 THEN excluded.submitted_at ELSE results.submitted_at END,
+                is_submitted = MAX(results.is_submitted, excluded.is_submitted)
+            """,
+            (
+                test_code, user_id, user_name, answers_str,
+                now if submitted else 0, total_q, 1 if submitted else 0,
+            ),
+        )
+        await db.commit()
+
+
+def build_submit_text(test_code, user_name, answered, total_q, end_time):
+    end_str = format_uz_time(end_time) if end_time else "tez orada"
+    safe_name = html.escape(user_name or "Foydalanuvchi")
+    return (
+        f"✅ <b>Javoblaringiz qabul qilindi!</b>\n\n"
+        f"👤 <b>O‘quvchi:</b> {safe_name}\n"
+        f"🔑 <b>Test ID:</b> <code>{test_code}</code>\n"
+        f"✍️ <b>Belgilangan savollar:</b> <b>{answered} / {total_q} ta</b>\n"
+        f"⏳ <b>Test yakunlanish vaqti:</b> <b>{end_str}</b>\n\n"
+        f"🔒 <i>To‘g‘ri javoblar va natijalar test vaqti tugagach e’lon qilinadi.</i>"
+    )
+
+
+async def send_test_content(message, content_type, file_id, content_text, caption_text):
+    caption = caption_text
+    if content_type == "photo" and content_text and content_text.strip():
+        merged = f"{html.escape(content_text.strip())}\n\n{caption_text}"
+        if len(merged) <= 1000:
+            caption = merged
+    if content_type == "photo" and file_id:
+        await message.answer_photo(
+            photo=file_id, caption=caption,
+            reply_markup=ReplyKeyboardRemove(), parse_mode="HTML",
+        )
+        return
+    if content_type == "document" and file_id:
+        await message.answer_document(
+            document=file_id, caption=caption_text,
+            reply_markup=ReplyKeyboardRemove(), parse_mode="HTML",
+        )
+        return
+    if content_text:
+        chunks = chunk_text(content_text, limit=3500)
+        if len(chunks) == 1:
+            await message.answer(
+                f"📝 <b>Test savollari:</b>\n\n{html.escape(chunks[0])}\n\n{caption_text}",
+                reply_markup=ReplyKeyboardRemove(),
+                parse_mode="HTML",
+            )
+            return
+        for i, chunk in enumerate(chunks):
+            await message.answer(
+                chunk, reply_markup=ReplyKeyboardRemove() if i == 0 else None
+            )
+        await message.answer(caption_text, parse_mode="HTML")
+        return
+    await message.answer(caption_text, reply_markup=ReplyKeyboardRemove(), parse_mode="HTML")
+
+
+async def begin_test(message: types.Message, state: FSMContext, test_code: str, user):
+    user_id = user.id
+    user_name = user.full_name or "Foydalanuvchi"
+    now = time.time()
+
+    async with connect_db() as db:
+        async with db.execute(
+            "SELECT photo_id, answers, difficulties, content_type, content_text, "
+            "duration_minutes, end_time, is_finished FROM tests WHERE code = ?",
+            (test_code,),
+        ) as cursor:
+            row = await cursor.fetchone()
+
+        if not row:
+            await message.answer("⚠️ Bunday ID li test topilmadi. Qaytadan tekshirib kiriting:")
+            return
+
+        async with db.execute(
+            "SELECT user_answers, is_submitted FROM results WHERE test_code = ? AND user_id = ?",
+            (test_code, user_id),
+        ) as cursor:
+            my_row = await cursor.fetchone()
+
+    photo_id, answers_str, diff_str, content_type, content_text, duration_min, end_time, is_finished = row
+    content_type = content_type or "photo"
+    content_text = content_text or ""
+    end_time = end_time or 0
+    total_q = len(answers_str or "")
+    try:
+        diffs = [float(x) for x in (diff_str or "").split(",") if x]
+    except ValueError:
+        diffs = []
+    if len(diffs) != total_q:
+        diffs = [-1.5 + 3.0 * i / max(1, total_q - 1) for i in range(total_q)]
+
+    if not total_q or not diffs:
+        await message.answer("⚠️ Ushbu test ma’lumotlari to‘liq emas.")
+        return
+
+    if is_finished or (end_time > 0 and now >= end_time):
+        await state.clear()
+        await message.answer(
+            "⚠️ <b>Ushbu test uchun qabul tugagan!</b>\n\n"
+            "To‘g‘ri javoblar va umumiy o‘rinlar reytingini bilish uchun asosiy menyudan "
+            "<b>'📊 Javoblar va o‘rinlar'</b> bo‘limiga kiring.",
+            reply_markup=await get_main_menu(user_id),
+            parse_mode="HTML",
+        )
+        return
+
+    if my_row and my_row[1]:
+        await state.clear()
+        end_str = format_uz_time(end_time) if end_time > 0 else "tez orada"
+        await message.answer(
+            f"⚠️ <b>Siz ushbu testga javoblaringizni topshirib bo‘lgansiz!</b>\n\n"
+            f"Har bir o‘quvchi testni faqat 1 marta topshira oladi.\n\n"
+            f"⏳ Natijalar <b>{end_str}</b> da e’lon qilinadi.",
+            reply_markup=await get_main_menu(user_id),
+            parse_mode="HTML",
+        )
+        return
+
+    saved = (my_row[0] if my_row else "") or ""
+    answers = list(saved[:total_q].ljust(total_q, "-"))
+    next_index = next(
+        (i for i, a in enumerate(answers) if a not in {"A", "B", "C", "D"}), None
+    )
+    answered_count = sum(1 for a in answers if a in "ABCD")
+
+    await state.set_state(SolveTest.answering)
+    await state.update_data(
+        test_code=test_code,
+        correct_answers=answers_str,
+        difficulties=diffs,
+        answers=answers,
+        next_index=next_index if next_index is not None else total_q,
+        total_q=total_q,
+        end_time=end_time,
+    )
+
+    rem_min = max(1, int(end_time - now) // 60) if end_time else 0
+    caption_text = (
+        f"📋 <b>Test ID:</b> <code>{test_code}</code>\n"
+        f"📊 Jami savollar: {total_q} ta.\n"
+        + (f"✍️ Belgilangan: <b>{answered_count}/{total_q}</b>\n" if answered_count else "")
+        + f"⏳ <b>Qolgan vaqt:</b> taxminan {rem_min} daqiqa.\n\n"
+        f"Quyidagi variantlardan javoblarni belgilang:"
+    )
+
+    await send_test_content(message, content_type, photo_id, content_text, caption_text)
+
+    if next_index is None:
+        await save_test_result(test_code, user_id, user_name, "".join(answers), total_q, submitted=True)
+        await state.clear()
+        await message.answer(
+            build_submit_text(test_code, user_name, answered_count, total_q, end_time),
+            parse_mode="HTML",
+        )
+        await message.answer("Asosiy menyu:", reply_markup=await get_main_menu(user_id))
+        return
+
+    header = f"<b>{next_index + 1}-savol</b> (jami {total_q} ta)"
+    if answered_count:
+        header += f"\n✍️ Belgilangan: <b>{answered_count}/{total_q}</b>"
+    await message.answer(header, reply_markup=get_options_keyboard(), parse_mode="HTML")
+
+
 @dp.message(F.text == "📝 Test yechish")
 async def start_solve_test(message: types.Message, state: FSMContext):
     await state.clear()
     if not await ensure_subscribed(message):
         return
+
+    now = time.time()
+    async with connect_db() as db:
+        async with db.execute(
+            "SELECT code, answers, end_time FROM tests "
+            "WHERE is_finished = 0 AND end_time > ? ORDER BY created_at DESC LIMIT 20",
+            (now,),
+        ) as cursor:
+            tests = await cursor.fetchall()
+
     await state.set_state(SolveTest.waiting_for_id)
-    await message.answer(
-        "Test ID raqamini kiriting:\n\n<i>Bekor qilish uchun '❌ Bekor qilish' ni bosing.</i>",
-        reply_markup=cancel_menu,
-        parse_mode="HTML",
-    )
+    if tests:
+        lines = "\n".join(
+            f"• <code>{code}</code> — {len(ans)} savol, {max(1, int(et - now) // 60)} daqiqa qoldi"
+            for code, ans, et in tests
+        )
+        await message.answer(
+            f"📝 <b>Faol testlar:</b>\n{lines}\n\n"
+            "Quyidagidan tanlang yoki test ID raqamini yozib yuboring.\n\n"
+            "<i>Bekor qilish uchun '❌ Bekor qilish'.</i>",
+            reply_markup=get_test_list_kb(tests),
+            parse_mode="HTML",
+        )
+    else:
+        await message.answer(
+            "Hozircha faol testlar yo‘q.\n\nTest ID raqamini kiriting:\n\n"
+            "<i>Bekor qilish uchun '❌ Bekor qilish' ni bosing.</i>",
+            reply_markup=cancel_menu,
+            parse_mode="HTML",
+        )
+
+
+@dp.callback_query(F.data.startswith("tsel:"))
+async def solve_test_select(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    arg = callback.data.split(":", 1)[1]
+
+    if arg == "cancel":
+        await state.clear()
+        try:
+            await callback.message.edit_text(
+                "❌ Test yechish bekor qilindi.", reply_markup=None
+            )
+        except TelegramBadRequest:
+            pass
+        await callback.message.answer(
+            "Asosiy menyu:", reply_markup=await get_main_menu(callback.from_user)
+        )
+        return
+
+    if arg == "manual":
+        await state.set_state(SolveTest.waiting_for_id)
+        try:
+            await callback.message.edit_text(
+                "Test ID raqamini yozib yuboring:\n\n<i>Bekor qilish uchun '❌ Bekor qilish'.</i>",
+                parse_mode="HTML",
+                reply_markup=None,
+            )
+        except TelegramBadRequest:
+            pass
+        await callback.message.answer("✍️ Test ID:", reply_markup=cancel_menu)
+        return
+
+    if not await ensure_subscribed_cb(callback):
+        return
+
+    await state.clear()
+    try:
+        await callback.message.delete()
+    except TelegramBadRequest:
+        pass
+    await begin_test(callback.message, state, arg, callback.from_user)
 
 
 @dp.message(SolveTest.waiting_for_id, F.text)
@@ -1001,297 +1452,240 @@ async def enter_test_id(message: types.Message, state: FSMContext):
         return
 
     test_code = message.text.strip()
-    user_id = message.from_user.id
-
-    async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute(
-            """
-            SELECT photo_id, answers, difficulties, content_type, content_text, duration_minutes, end_time, is_finished
-            FROM tests WHERE code = ?
-            """,
-            (test_code,),
-        ) as cursor:
-            row = await cursor.fetchone()
-
-        if not row:
-            await message.answer("⚠️ Bunday ID li test topilmadi. Qaytadan tekshirib kiriting:")
-            return
-
-        # Oldin javob topshirganmi tekshirish
-        async with db.execute(
-            "SELECT 1 FROM results WHERE test_code = ? AND user_id = ?",
-            (test_code, user_id),
-        ) as cursor:
-            already_done = await cursor.fetchone()
-
-    photo_id, answers, diff_str, content_type, content_text, duration_min, end_time, is_finished = row
-    now = time.time()
-
-    # Test vaqti tugaganmi tekshirish
-    if is_finished or (end_time > 0 and now >= end_time):
-        await state.clear()
-        menu = await get_main_menu(user_id)
+    if not re.fullmatch(r"\d{4,10}", test_code):
         await message.answer(
-            f"⚠️ <b>Ushbu test uchun qabul tugagan!</b>\n\n"
-            f"Test vaqti yakunlangan. To‘g‘ri javoblar va umumiy o‘rinlar reytingini bilish uchun asosiy menyudan "
-            f"<b>'📊 Javoblar va o‘rinlar'</b> bo‘limiga kiring.",
-            reply_markup=menu,
-            parse_mode="HTML",
+            "⚠️ Test ID faqat raqamlardan iborat. Masalan: <b>12345</b>", parse_mode="HTML"
         )
         return
 
-    # Oldin topshirgan bo'lsa
-    if already_done:
-        await state.clear()
-        menu = await get_main_menu(user_id)
-        end_str = format_uz_time(end_time) if end_time > 0 else "Tez orada"
-        await message.answer(
-            f"⚠️ <b>Siz ushbu testga javoblaringizni topshirib bo‘lgansiz!</b>\n\n"
-            f"Qoidaga ko‘ra har bir o‘quvchi testni faqat 1 marta topshira oladi.\n\n"
-            f"⏳ Test vaqti tugagach (<b>{end_str}</b>), to‘g‘ri javoblar kaliti va sizning natijangiz ushbu bot orqali sizga avtomatik ravishda yuboriladi.",
-            reply_markup=menu,
-            parse_mode="HTML",
-        )
-        return
+    await begin_test(message, state, test_code, message.from_user)
 
-    content_type = content_type or "photo"
-    content_text = content_text or ""
-    diffs = [float(x) for x in diff_str.split(",")]
-    total_q = len(answers)
 
-    await state.set_state(SolveTest.answering)
-    await state.update_data(
-        test_code=test_code,
-        correct_answers=answers,
-        difficulties=diffs,
-        user_answers=[],
-        current_q=1,
-        total_q=total_q,
-        end_time=end_time,
-    )
-
-    rem_seconds = max(0, int(end_time - now))
-    rem_min = rem_seconds // 60
-
-    caption_text = (
-        f"📋 <b>Test ID:</b> <code>{test_code}</code>\n"
-        f"📊 Jami savollar: {total_q} ta.\n"
-        f"⏳ <b>Qolgan vaqt:</b> taxminan {rem_min} daqiqa.\n\n"
-        f"Quyidagi variantlardan javoblarni belgilang:"
-    )
-
-    # 1. Avval test savollarini (rasm, PDF yoki yozma matn) to'liq chiqaramiz
-    if content_type == "photo" and photo_id:
-        await message.answer_photo(
-            photo=photo_id,
-            caption=caption_text,
-            reply_markup=ReplyKeyboardRemove(),
-            parse_mode="HTML",
-        )
-    elif content_type == "document" and photo_id:
-        await message.answer_document(
-            document=photo_id,
-            caption=caption_text,
-            reply_markup=ReplyKeyboardRemove(),
-            parse_mode="HTML",
-        )
-    elif content_type == "text" or content_text:
-        safe_content = html.escape(content_text)
-        if len(safe_content) > 3800:
-            chunks = [safe_content[i : i + 3800] for i in range(0, len(safe_content), 3800)]
-            for chunk in chunks:
-                await message.answer(chunk, reply_markup=ReplyKeyboardRemove())
-            await message.answer(caption_text, parse_mode="HTML")
-        else:
-            await message.answer(
-                f"📝 <b>Test savollari:</b>\n\n{safe_content}\n\n{caption_text}",
-                reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML",
-            )
-    else:
-        await message.answer(caption_text, reply_markup=ReplyKeyboardRemove(), parse_mode="HTML")
-
-    # 2. Test tagiga birinchi savol va javob variantlarini chiqaramiz
+@dp.message(SolveTest.answering)
+async def test_answering_hint(message: types.Message, state: FSMContext):
     await message.answer(
-        f"<b>1-savol</b> (jami {total_q} ta):",
-        reply_markup=get_options_keyboard(current_q=1, total_q=total_q),
+        "ℹ️ Javobni <b>A</b>, <b>B</b>, <b>C</b> yoki <b>D</b> tugmalari orqali belgilang.\n"
+        "Testni yakunlash uchun <b>🏁 Testni tugatish</b> tugmasini bosing.\n"
+        "Javoblaringiz har safar avtomatik saqlanadi.",
         parse_mode="HTML",
     )
 
 
 @dp.callback_query(SolveTest.answering, F.data.startswith("ans_"))
 async def handle_answer_choice(callback: types.CallbackQuery, state: FSMContext):
-    await callback.answer()
-
     data = await state.get_data()
     menu = await get_main_menu(callback.from_user.id)
-    if not data or "current_q" not in data:
-        await callback.message.edit_text("⚠️ Test muddati tugagan yoki bekor qilingan.")
-        await callback.message.answer("Asosiy menyu:", reply_markup=menu)
-        return
-
-    action = callback.data.split("_")[1]
-
-    # Testni to'xtatish tanlansa
-    if action == "cancel":
-        await state.clear()
-        try:
-            await callback.message.edit_text("❌ Test yechish to‘xtatildi.")
-        except TelegramBadRequest:
-            pass
-        await callback.message.answer("Asosiy menyuga qaytdingiz:", reply_markup=menu)
-        return
-
-    end_time = data.get("end_time", 0)
-    now = time.time()
-
-    # Agar javob belgilayotganda vaqt tugab qolgan bo'lsa
-    if end_time > 0 and now >= end_time:
-        user_answers = list(data.get("user_answers", []))
-        test_code = data["test_code"]
-        total_q = data["total_q"]
-        raw_user_name = callback.from_user.full_name or "Foydalanuvchi"
-
-        async with aiosqlite.connect(DB_NAME) as db:
-            await db.execute(
-                """
-                INSERT INTO results (test_code, user_id, user_name, user_answers, submitted_at, total_q, is_notified)
-                VALUES (?, ?, ?, ?, ?, ?, 0)
-                """,
-                (test_code, callback.from_user.id, raw_user_name, "".join(user_answers), now, total_q),
-            )
-            await db.commit()
-
+    if not data or "answers" not in data:
+        await callback.answer("Test sessiyasi topilmadi", show_alert=True)
         await state.clear()
         try:
             await callback.message.edit_text(
-                f"⏳ <b>Afsuski, test vaqti tugadi!</b>\n\n"
-                f"Siz shu paytgacha belgilagan <b>{len(user_answers)} ta</b> savol bo‘yicha javoblaringiz qabul qilindi.\n\n"
-                f"Test vaqti to‘liq yakunlangach, barcha natijalar e’lon qilinadi.",
-                parse_mode="HTML",
+                "⚠️ Test sessiyasi topilmadi. Testni qaytadan boshlang."
             )
         except TelegramBadRequest:
             pass
-        await callback.message.answer("Asosiy menyuga qaytdingiz:", reply_markup=menu)
+        await callback.message.answer("Asosiy menyu:", reply_markup=menu)
         return
 
-    user_answers = list(data.get("user_answers", []))
-    user_answers.append(action)
-
-    current_q = data["current_q"] + 1
-    total_q = data["total_q"]
+    action = callback.data.split("_", 1)[1]
     test_code = data["test_code"]
+    total_q = data["total_q"]
+    end_time = data.get("end_time", 0) or 0
+    now = time.time()
+    user_name = callback.from_user.full_name or "Foydalanuvchi"
+    answers = list(data.get("answers", []))
+    if len(answers) < total_q:
+        answers += ["-"] * (total_q - len(answers))
 
-    if current_q <= total_q:
-        await state.update_data(user_answers=user_answers, current_q=current_q)
+    # Test bazada hamon faolmi?
+    async with connect_db() as db:
+        async with db.execute(
+            "SELECT is_finished FROM tests WHERE code = ?", (test_code,)
+        ) as cursor:
+            row = await cursor.fetchone()
+
+    if not row or row[0] or (end_time > 0 and now >= end_time):
+        await callback.answer("⚠️ Test vaqti tugagan!", show_alert=True)
+        await state.clear()
         try:
             await callback.message.edit_text(
-                f"<b>{current_q}-savol</b> (jami {total_q} ta):",
-                reply_markup=get_options_keyboard(current_q=current_q, total_q=total_q),
+                "⏳ <b>Test vaqti tugadi.</b>\n\n"
+                "Siz shu paytgacha belgilagan javoblaringiz saqlandi. "
+                "Natijalar test to‘liq yakunlangach e’lon qilinadi.",
                 parse_mode="HTML",
             )
         except TelegramBadRequest:
             pass
-    else:
-        # Barcha savollar yechildi - JAVOBLARNI SAQLAYMIZ (lekin natijani hozir ko'rsatmaymiz!)
-        raw_user_name = callback.from_user.full_name or "Foydalanuvchi"
-        safe_user_name = html.escape(raw_user_name)
-        answers_str = "".join(user_answers)
-        end_str = format_uz_time(end_time) if end_time > 0 else "Vaqt tugaganda"
+        await callback.message.answer("Asosiy menyu:", reply_markup=menu)
+        return
 
-        async with aiosqlite.connect(DB_NAME) as db:
-            await db.execute(
-                """
-                INSERT INTO results (test_code, user_id, user_name, user_answers, submitted_at, total_q, is_notified)
-                VALUES (?, ?, ?, ?, ?, ?, 0)
-                """,
-                (test_code, callback.from_user.id, raw_user_name, answers_str, now, total_q),
-            )
-            await db.commit()
-
-        success_text = (
-            f"✅ <b>Javoblaringiz muvaffaqiyatli qabul qilindi!</b>\n\n"
-            f"👤 <b>O‘quvchi:</b> {safe_user_name}\n"
-            f"🔑 <b>Test ID:</b> <code>{test_code}</code>\n"
-            f"📊 <b>Belgilangan savollar:</b> {len(user_answers)} / {total_q} ta\n"
-            f"⏳ <b>Test yakunlanish vaqti:</b> <b>{end_str}</b>\n\n"
-            f"🔒 <b>MUHIM:</b> Sinovning adolatli o‘tishi uchun, to‘g‘ri javoblar va to‘plagan balingiz hozir ko‘rsatilmaydi.\n\n"
-            f"Test muddati (<b>{end_str}</b>) to‘liq yakunlangach:\n"
-            f"• To‘g‘ri javoblar kaliti\n"
-            f"• To‘plagan balingiz va egallagan o‘rningiz\n"
-            f"avtomatik ravishda ushbu bot orqali sizga yuboriladi va rasmiy kanalga e’lon qilinadi!"
+    # Tugatish tugmasi — javoblar saqlanadi va nechta belgilangani ko'rsatiladi
+    if action == "finish":
+        await callback.answer()
+        answered = sum(1 for a in answers if a in "ABCD")
+        await save_test_result(
+            test_code, callback.from_user.id, user_name, "".join(answers), total_q, submitted=True
         )
-
+        await state.clear()
         try:
-            await callback.message.edit_text(success_text, parse_mode="HTML")
+            await callback.message.edit_text(
+                build_submit_text(test_code, user_name, answered, total_q, end_time),
+                parse_mode="HTML",
+            )
         except TelegramBadRequest:
             pass
-
-        await state.clear()
         await callback.message.answer("Asosiy menyu:", reply_markup=menu)
+        return
+
+    # Chiqish — javoblar saqlanadi, keyin shu ID bilan davom ettirish mumkin
+    if action == "exit":
+        await callback.answer()
+        await save_test_result(
+            test_code, callback.from_user.id, user_name, "".join(answers), total_q, submitted=False
+        )
+        await state.clear()
+        answered = sum(1 for a in answers if a in "ABCD")
+        try:
+            await callback.message.edit_text(
+                f"⏸ <b>Testdan chiqdingiz.</b>\n\n"
+                f"✍️ Belgilangan javoblar: <b>{answered}/{total_q}</b> ta saqlandi.\n\n"
+                f"Davom ettirish uchun <b>📝 Test yechish</b> bo‘limidan "
+                f"<code>{test_code}</code> testini qayta tanlang.",
+                parse_mode="HTML",
+            )
+        except TelegramBadRequest:
+            pass
+        await callback.message.answer("Asosiy menyu:", reply_markup=menu)
+        return
+
+    if action not in {"A", "B", "C", "D"}:
+        await callback.answer()
+        return
+
+    await callback.answer()
+    idx = data.get("next_index", 0)
+    if idx >= total_q:
+        idx = next((i for i, a in enumerate(answers) if a not in "ABCD"), total_q - 1)
+    answers[idx] = action
+
+    nxt = next((i for i in range(idx + 1, total_q) if answers[i] not in "ABCD"), None)
+    answered = sum(1 for a in answers if a in "ABCD")
+
+    if nxt is None:
+        await save_test_result(
+            test_code, callback.from_user.id, user_name, "".join(answers), total_q, submitted=True
+        )
+        await state.clear()
+        try:
+            await callback.message.edit_text(
+                build_submit_text(test_code, user_name, answered, total_q, end_time),
+                parse_mode="HTML",
+            )
+        except TelegramBadRequest:
+            pass
+        await callback.message.answer("Asosiy menyu:", reply_markup=menu)
+        return
+
+    await save_test_result(
+        test_code, callback.from_user.id, user_name, "".join(answers), total_q, submitted=False
+    )
+    await state.update_data(answers=answers, next_index=nxt)
+
+    try:
+        await callback.message.edit_text(
+            f"<b>{nxt + 1}-savol</b> (jami {total_q} ta)\n"
+            f"✍️ Belgilangan: <b>{answered}/{total_q}</b>",
+            reply_markup=get_options_keyboard(),
+            parse_mode="HTML",
+        )
+    except TelegramBadRequest:
+        pass
 
 
 # ==================== TESTNI YAKUNLASH VA NATIJALARNI BIRGALIKDA YUBORISH ====================
 async def finalize_test(test_code: str):
-    """Test muddati tugaganda barcha qatnashuvchilarga va kanalga natijalarni va to'g'ri javoblarni yuborish."""
-    async with aiosqlite.connect(DB_NAME) as db:
-        # Testni yakunlangan deb belgilaymiz
-        await db.execute("UPDATE tests SET is_finished = 1 WHERE code = ?", (test_code,))
-        await db.commit()
+    """Test muddati tugaganda barcha qatnashuvchilarga va kanalga natijalarni yuborish."""
+    if test_code in FINALIZING_TESTS:
+        return
+    FINALIZING_TESTS.add(test_code)
+    try:
+        await _finalize_test(test_code)
+    except Exception:
+        logging.exception(f"Test {test_code} ni yakunlashda xatolik")
+    finally:
+        FINALIZING_TESTS.discard(test_code)
 
-        # Test ma'lumotlarini olish
+
+async def _finalize_test(test_code: str):
+    async with connect_db() as db:
         async with db.execute(
-            "SELECT answers, difficulties, creator_id FROM tests WHERE code = ?",
-            (test_code,),
+            "SELECT answers, difficulties FROM tests WHERE code = ?", (test_code,)
         ) as cursor:
             test_row = await cursor.fetchone()
 
         if not test_row:
             return
 
-        answers_str, diff_str, creator_id = test_row
-        correct_answers = list(answers_str)
-        diffs = [float(x) for x in diff_str.split(",")]
+        answers_str, diff_str = test_row
+        correct_answers = list(answers_str or "")
         total_q = len(correct_answers)
 
-        # Muddatidan oldin va vaqtida topshirgan barcha javoblarni olish
+        try:
+            diffs = [float(x) for x in (diff_str or "").split(",") if x]
+        except ValueError:
+            diffs = []
+        if len(diffs) != total_q:
+            diffs = [-1.5 + 3.0 * i / max(1, total_q - 1) for i in range(total_q)]
+
+        if not total_q:
+            await db.execute(
+                "UPDATE tests SET is_finished = 1, results_posted = 1 WHERE code = ?",
+                (test_code,),
+            )
+            await db.commit()
+            return
+
+        # Testni yakunlangan deb belgilaymiz
+        await db.execute(
+            "UPDATE tests SET is_finished = 1 WHERE code = ? AND is_finished = 0",
+            (test_code,),
+        )
+        await db.commit()
+
+        # Barcha qatnashuvchilar (tugatmaganlar ham) — javoblari saqlangan
         async with db.execute(
-            """
-            SELECT id, user_id, user_name, user_answers, submitted_at
-            FROM results
-            WHERE test_code = ?
-            """,
+            "SELECT id, user_id, user_name, user_answers, submitted_at, is_notified "
+            "FROM results WHERE test_code = ? ORDER BY id",
             (test_code,),
         ) as cursor:
             submissions = await cursor.fetchall()
 
+        async with db.execute(
+            "SELECT results_posted FROM tests WHERE code = ?", (test_code,)
+        ) as cursor:
+            posted_row = await cursor.fetchone()
+
     formatted_answers = " ".join([f"<b>{i+1}.</b>{ans}" for i, ans in enumerate(correct_answers)])
+    channel_done = bool(posted_row and posted_row[0])
 
     if not submissions:
-        # Hech kim topshirmagan bo'lsa
-        empty_msg = (
-            f"🏁 <b>TEST YAKUNLANDI (ID: <code>{test_code}</code>)</b>\n\n"
-            f"📋 <b>To‘g‘ri javoblar kaliti:</b>\n{formatted_answers}\n"
-            f"──────────────────────────\n"
-            f"<i>Ushbu test bo‘yicha hech qanday natija qayd etilmadi.</i>"
-        )
-        try:
-            if CHANNEL_ID:
-                await bot.send_message(chat_id=CHANNEL_ID, text=empty_msg, parse_mode="HTML")
-        except Exception as e:
-            logging.error(f"Kanalga yuborishda xatolik: {e}")
+        async with connect_db() as db:
+            await db.execute("UPDATE tests SET results_posted = 1 WHERE code = ?", (test_code,))
+            await db.commit()
         return
 
     # Har bir o'quvchining Rasch balli va qobiliyatini hisoblash
     evaluated_list = []
-    async with aiosqlite.connect(DB_NAME) as db:
-        for sub_id, u_id, u_name, u_ans_str, sub_time in submissions:
-            u_ans_list = list(u_ans_str or "")
+    async with connect_db() as db:
+        for sub_id, u_id, u_name, u_ans_str, sub_time, notified in submissions:
+            u_ans_str = u_ans_str or ""
+            u_ans_list = list(u_ans_str)
             responses = [
                 1 if i < len(u_ans_list) and u_ans_list[i] == correct_answers[i] else 0
                 for i in range(total_q)
             ]
             correct_count = sum(responses)
+            answered = sum(1 for ch in u_ans_str if ch in "ABCD")
             theta, scaled_score, grade = calculate_rasch(responses, diffs)
 
             await db.execute(
@@ -1310,18 +1704,23 @@ async def finalize_test(test_code: str):
                 "score": scaled_score,
                 "theta": theta,
                 "correct_count": correct_count,
+                "answered": answered,
+                "notified": notified,
                 "grade": grade,
                 "submitted_at": sub_time or 0,
             })
         await db.commit()
 
     # O'rinlarni saralash (Ball bo'yicha kamayish, bir xil bo'lsa vaqt bo'yicha)
-    evaluated_list.sort(key=lambda x: (-x["score"], x["submitted_at"]))
+    evaluated_list.sort(key=lambda x: (-x["score"], x["submitted_at"] or float("inf")))
     total_participants = len(evaluated_list)
 
     # 1. Har bir o'quvchiga shaxsiy natijasini va to'g'ri javoblar kalitini yuboramiz
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         for idx, item in enumerate(evaluated_list, start=1):
+            if item["notified"]:
+                continue
+
             if idx == 1:
                 rank_badge = "🥇 1-o‘rin"
             elif idx == 2:
@@ -1332,7 +1731,8 @@ async def finalize_test(test_code: str):
                 rank_badge = f"▫️ {idx}-o‘rin"
 
             safe_name = html.escape(item["user_name"] or "Foydalanuvchi")
-            wrong_count = total_q - item["correct_count"]
+            wrong_count = item["answered"] - item["correct_count"]
+            unanswered = total_q - item["answered"]
 
             student_notification = (
                 f"🏁 <b>Test vaqti tugadi va natijalar e’lon qilindi!</b>\n\n"
@@ -1340,28 +1740,32 @@ async def finalize_test(test_code: str):
                 f"👤 <b>O‘quvchi:</b> {safe_name}\n"
                 f"🏆 <b>Egallagan o‘rningiz:</b> <b>{rank_badge}</b> (jami {total_participants} nafar o‘quvchi orasida)\n"
                 f"🎯 <b>Rasch balli:</b> <b>{item['score']} / 100</b> ({item['grade']})\n"
+                f"✍️ Belgilangan savollar: {item['answered']} / {total_q} ta\n"
                 f"✅ To‘g‘ri javoblar: {item['correct_count']} ta\n"
                 f"❌ Noto‘g‘ri javoblar: {wrong_count} ta\n"
+                f"➖ Javobsiz qolgan: {unanswered} ta\n"
                 f"📐 Qobiliyat ko‘rsatkichi (Theta): <code>{item['theta']:+} logit</code>\n\n"
                 f"📋 <b>To‘g‘ri javoblar kaliti:</b>\n{formatted_answers}\n"
             )
 
             try:
-                await bot.send_message(chat_id=item["user_id"], text=student_notification, parse_mode="HTML")
+                for chunk in chunk_text(student_notification):
+                    await bot.send_message(chat_id=item["user_id"], text=chunk, parse_mode="HTML")
                 await db.execute("UPDATE results SET is_notified = 1 WHERE id = ?", (item["id"],))
             except Exception as e:
                 logging.warning(f"O'quvchi ({item['user_id']}) ga yuborib bo'lmadi: {e}")
 
         await db.commit()
 
-    # 2. Kanalga barcha o'rinlar reytingi va to'g'ri javoblarni yuboramiz
+    # 2. Kanalga faqat to'g'ri javoblar kaliti va natijalar reytingini yuboramiz
+    if channel_done or not CHANNEL_ID:
+        return
+
     channel_post = (
-        f"🏁 <b>TEST YAKUNLANDI VA NATIJALAR E'LON QILINDI!</b>\n\n"
-        f"🔑 <b>Test ID:</b> <code>{test_code}</code>\n"
-        f"👥 <b>Jami qatnashuvchilar:</b> {total_participants} nafar\n\n"
+        f"🏁 <b>TEST YAKUNLANDI — ID: <code>{test_code}</code></b>\n\n"
         f"📋 <b>To‘g‘ri javoblar kaliti:</b>\n{formatted_answers}\n"
         f"──────────────────────────\n"
-        f"🏆 <b>O‘QUVCHILAR O‘RINLARI REYTINGI:</b>\n\n"
+        f"🏆 <b>NATIJALAR:</b>\n\n"
     )
 
     for i, item in enumerate(evaluated_list[:50], start=1):
@@ -1381,13 +1785,11 @@ async def finalize_test(test_code: str):
         )
 
     try:
-        if CHANNEL_ID:
-            if len(channel_post) > 4000:
-                chunks = [channel_post[i : i + 4000] for i in range(0, len(channel_post), 4000)]
-                for chunk in chunks:
-                    await bot.send_message(chat_id=CHANNEL_ID, text=chunk, parse_mode="HTML")
-            else:
-                await bot.send_message(chat_id=CHANNEL_ID, text=channel_post, parse_mode="HTML")
+        for chunk in chunk_text(channel_post):
+            await bot.send_message(chat_id=CHANNEL_ID, text=chunk, parse_mode="HTML")
+        async with connect_db() as db:
+            await db.execute("UPDATE tests SET results_posted = 1 WHERE code = ?", (test_code,))
+            await db.commit()
     except Exception as e:
         logging.error(f"Kanalga yuborishda xatolik: {e}")
 
@@ -1398,7 +1800,7 @@ async def check_test_deadlines_loop():
     while True:
         try:
             now = time.time()
-            async with aiosqlite.connect(DB_NAME) as db:
+            async with connect_db() as db:
                 async with db.execute(
                     "SELECT code FROM tests WHERE is_finished = 0 AND end_time > 0 AND end_time <= ?",
                     (now,),
@@ -1440,7 +1842,7 @@ async def show_answers_and_ranks(message: types.Message, state: FSMContext):
     now = time.time()
     menu = await get_main_menu(message.from_user.id)
 
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         # Test ma'lumotlarini olish
         async with db.execute(
             "SELECT answers, end_time, is_finished FROM tests WHERE code = ?",
@@ -1512,8 +1914,7 @@ async def show_answers_and_ranks(message: types.Message, state: FSMContext):
         msg += "<i>Ushbu test bo‘yicha natija qayd etilmagan.</i>\n"
 
     if len(msg) > 4000:
-        chunks = [msg[i : i + 4000] for i in range(0, len(msg), 4000)]
-        for chunk in chunks:
+        for chunk in chunk_text(msg):
             await message.answer(chunk, parse_mode="HTML")
         await message.answer("Menyuga qaytildi:", reply_markup=menu)
     else:
@@ -1522,31 +1923,166 @@ async def show_answers_and_ranks(message: types.Message, state: FSMContext):
     await state.clear()
 
 
-# ==================== BILIM SINOVI (INGLIZ / MATEMATIKA) ====================
+# ==================== BILIM SINOVI (INGLIZ / MATEMATIKA / GEOMETRIYA / ARALASH) ====================
+PRACTICE_BLOCK_ORDER = ("easy", "medium", "hard")
+PRACTICE_SUBJECTS = {"english", "math", "geometry", "mixed"}
+
+PRACTICE_BUTTONS = {
+    "📘 Ingliz tili": "english",
+    "➗ Matematika": "math",
+    "📐 Geometriya": "geometry",
+    "🔀 Aralash": "mixed",
+}
+
+
+def split_by_level(total: int) -> dict:
+    base = total // len(PRACTICE_BLOCK_ORDER)
+    counts = {lv: base for lv in PRACTICE_BLOCK_ORDER}
+    counts["hard"] += total - base * len(PRACTICE_BLOCK_ORDER)
+    return counts
+
+
+async def _fetch_level_questions(db, subject: str, level: str, limit: int):
+    if limit <= 0:
+        return []
+    async with db.execute(
+        """
+        SELECT id, question, option_a, option_b, option_c, option_d, correct, photo_id
+        FROM question_bank
+        WHERE subject = ? AND level = ? AND source != 'legacy-fix'
+        ORDER BY RANDOM()
+        LIMIT ?
+        """,
+        (subject, level, limit),
+    ) as cursor:
+        rows = await cursor.fetchall()
+    return [
+        {
+            "id": r[0], "question": r[1], "a": r[2], "b": r[3],
+            "c": r[4], "d": r[5], "correct": r[6], "photo_id": r[7] or "",
+            "level": level,
+        }
+        for r in rows
+    ]
+
+
+async def fetch_practice_questions(subject: str, size: int):
+    """Har bir darajadan savollar olib, oson → o'rtacha → qiyin tartibida qaytaradi."""
+    counts = split_by_level(size)
+    questions = []
+    async with connect_db() as db:
+        for level in PRACTICE_BLOCK_ORDER:
+            if subject == "mixed":
+                need = counts[level]
+                geo_need = need // 2
+                level_qs = await _fetch_level_questions(db, "math", level, need - geo_need)
+                level_qs += await _fetch_level_questions(db, "geometry", level, geo_need)
+                random.shuffle(level_qs)
+            else:
+                level_qs = await _fetch_level_questions(db, subject, level, counts[level])
+            questions.extend(level_qs)
+    return questions
+
+
+async def begin_practice(
+    message: types.Message, state: FSMContext, subject: str, size: int = DEFAULT_PRACTICE_SIZE
+):
+    questions = await fetch_practice_questions(subject, size)
+    if not questions:
+        await message.answer(
+            f"⚠️ <b>{PRACTICE_NAMES[subject]}</b> bo‘yicha savollar topilmadi.",
+            parse_mode="HTML",
+        )
+        return
+
+    await state.set_state(PracticeTest.answering)
+    await state.update_data(
+        subject=subject, size=size, questions=questions, index=0,
+        answers=[], photo_msg_id=0,
+    )
+
+    counts = {lv: sum(1 for q in questions if q["level"] == lv) for lv in PRACTICE_BLOCK_ORDER}
+    lines = "\n".join(
+        f"{LEVEL_BADGES[lv]} {LEVEL_NAMES[lv]}: {counts[lv]} ta"
+        for lv in PRACTICE_BLOCK_ORDER if counts[lv]
+    )
+    note = ""
+    if len(questions) < size:
+        note = f"\n\n<i>Bazada yetarli savol yo‘q — {len(questions)} ta olindi.</i>"
+    await message.answer(
+        f"🧠 <b>{PRACTICE_NAMES[subject]}</b> — bilim sinovi\n\n"
+        f"Tartib: <b>osondan qiyinga</b> (aralash emas).\n{lines}\n\n"
+        f"Jami <b>{len(questions)} ta</b> savol. Omad!{note}",
+        reply_markup=ReplyKeyboardRemove(),
+        parse_mode="HTML",
+    )
+    await send_practice_question(message, state)
+
+
+def get_practice_count_kb(subject: str) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(text=f"{n} ta", callback_data=f"pcnt:{subject}:{n}")
+            for n in PRACTICE_SIZES
+        ],
+        [InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"pcnt:{subject}:0")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 async def start_practice_subject(message: types.Message, state: FSMContext, subject: str):
     await state.clear()
     if not await ensure_subscribed(message):
         return
     await message.answer(
-        f"🧠 <b>{SUBJECT_NAMES[subject]}</b> — bilim sinovi\n\n"
-        "Qiyinlik darajasini tanlang:",
-        reply_markup=get_level_keyboard(subject),
+        f"🧠 <b>{PRACTICE_NAMES[subject]}</b>\n\nNechta savol bo‘lsin?",
+        reply_markup=get_practice_count_kb(subject),
         parse_mode="HTML",
     )
 
 
-@dp.message(F.text == "📘 Ingliz tili")
-async def practice_english(message: types.Message, state: FSMContext):
-    await start_practice_subject(message, state, "english")
+@dp.message(F.text.in_(PRACTICE_BUTTONS))
+async def practice_subject_button(message: types.Message, state: FSMContext):
+    await start_practice_subject(message, state, PRACTICE_BUTTONS[message.text])
 
 
-@dp.message(F.text == "➗ Matematika")
-async def practice_math(message: types.Message, state: FSMContext):
-    await start_practice_subject(message, state, "math")
+@dp.callback_query(F.data.startswith("pcnt:"))
+async def practice_size_chosen(callback: types.CallbackQuery, state: FSMContext):
+    parts = callback.data.split(":")
+    if len(parts) != 3:
+        await callback.answer()
+        return
+    _, subject, raw = parts
+    await callback.answer()
+    if subject not in PRACTICE_SUBJECTS:
+        return
+
+    if raw == "0":
+        await state.clear()
+        try:
+            await callback.message.edit_text("❌ Bilim sinovi bekor qilindi.")
+        except TelegramBadRequest:
+            pass
+        await callback.message.answer(
+            "Asosiy menyu:", reply_markup=await get_main_menu(callback.from_user)
+        )
+        return
+
+    if not raw.isdigit() or int(raw) not in PRACTICE_SIZES:
+        return
+    if not await ensure_subscribed_cb(callback):
+        return
+
+    try:
+        await callback.message.delete()
+    except TelegramBadRequest:
+        pass
+    await begin_practice(callback.message, state, subject, int(raw))
 
 
 @dp.callback_query(F.data.startswith("lv:"))
 async def choose_practice_level(callback: types.CallbackQuery, state: FSMContext):
+    # Eski xabarlardagi daraja tugmalari ham to'liq (oson→qiyin) sinovni boshlaydi
     parts = callback.data.split(":")
     if len(parts) != 3:
         await callback.answer()
@@ -1566,65 +2102,31 @@ async def choose_practice_level(callback: types.CallbackQuery, state: FSMContext
         )
         return
 
-    if subject not in PRACTICE_VARIANT_SIZE or level not in LEVEL_NAMES:
-        await callback.answer()
+    await callback.answer()
+    if subject not in PRACTICE_SUBJECTS:
         return
-
     if not await ensure_subscribed_cb(callback):
         return
 
-    limit = PRACTICE_VARIANT_SIZE[subject]
-    async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute(
-            """
-            SELECT id, question, option_a, option_b, option_c, option_d, correct, photo_id
-            FROM question_bank
-            WHERE subject = ? AND level = ?
-            ORDER BY RANDOM()
-            LIMIT ?
-            """,
-            (subject, level, limit),
-        ) as cursor:
-            rows = await cursor.fetchall()
-
-    if not rows:
-        await callback.answer("Bu darajada savollar topilmadi!", show_alert=True)
-        return
-
-    questions = [
-        {
-            "id": r[0], "question": r[1], "a": r[2], "b": r[3],
-            "c": r[4], "d": r[5], "correct": r[6], "photo_id": r[7] or "",
-        }
-        for r in rows
-    ]
-
-    await state.set_state(PracticeTest.answering)
-    await state.update_data(
-        subject=subject, level=level, questions=questions, index=0, answers=[]
-    )
-
-    await callback.answer()
     try:
         await callback.message.delete()
     except TelegramBadRequest:
         pass
-
-    await callback.message.answer(
-        f"🧠 <b>{SUBJECT_NAMES[subject]}</b> — <b>{LEVEL_NAMES[level]}</b>\n"
-        f"Jami <b>{len(questions)} ta</b> savol. Omad!",
-        parse_mode="HTML",
-    )
-    await send_practice_question(callback.message, await state.get_data())
+    await begin_practice(callback.message, state, subject, DEFAULT_PRACTICE_SIZE)
 
 
-async def send_practice_question(message: types.Message, data: dict):
+async def send_practice_question(message: types.Message, state: FSMContext):
+    data = await state.get_data()
     questions = data["questions"]
     index = data["index"]
     q = questions[index]
     total = len(questions)
+    level = q.get("level", "easy")
 
-    header = f"<b>{index + 1}-savol</b> (jami {total} ta)"
+    header = (
+        f"{LEVEL_BADGES.get(level, '')} <b>{index + 1}-savol</b> (jami {total} ta)\n"
+        f"<i>{LEVEL_NAMES.get(level, '')}</i>"
+    )
     body = (
         f"{html.escape(q['question'])}\n\n"
         f"<b>A)</b> {html.escape(q['a'])}\n"
@@ -1648,14 +2150,21 @@ async def send_practice_question(message: types.Message, data: dict):
     )
 
     if q["photo_id"]:
-        await message.answer_photo(
-            photo=q["photo_id"], caption=header, parse_mode="HTML"
-        )
-        await message.answer(f"{header}\n\n{body}", reply_markup=kb, parse_mode="HTML")
+        photo_msg = await message.answer_photo(photo=q["photo_id"], parse_mode="HTML")
+        await state.update_data(photo_msg_id=photo_msg.message_id)
     else:
-        await message.answer(
-            f"{header}\n\n{body}", reply_markup=kb, parse_mode="HTML"
-        )
+        await state.update_data(photo_msg_id=0)
+    await message.answer(f"{header}\n\n{body}", reply_markup=kb, parse_mode="HTML")
+
+
+async def delete_practice_photo(callback: types.CallbackQuery, data: dict):
+    photo_msg_id = data.get("photo_msg_id") or 0
+    if not photo_msg_id:
+        return
+    try:
+        await callback.bot.delete_message(callback.message.chat.id, photo_msg_id)
+    except TelegramBadRequest:
+        pass
 
 
 @dp.callback_query(PracticeTest.answering, F.data.startswith("pans_"))
@@ -1675,6 +2184,7 @@ async def practice_answer(callback: types.CallbackQuery, state: FSMContext):
     action = callback.data.split("_")[1]
 
     if action == "cancel":
+        await delete_practice_photo(callback, data)
         await state.clear()
         try:
             await callback.message.delete()
@@ -1694,6 +2204,7 @@ async def practice_answer(callback: types.CallbackQuery, state: FSMContext):
     answers = list(data.get("answers", []))
     answers.append(action)
 
+    await delete_practice_photo(callback, data)
     try:
         await callback.message.delete()
     except TelegramBadRequest:
@@ -1702,7 +2213,7 @@ async def practice_answer(callback: types.CallbackQuery, state: FSMContext):
     next_index = index + 1
     if next_index < len(questions):
         await state.update_data(index=next_index, answers=answers)
-        await send_practice_question(callback.message, await state.get_data())
+        await send_practice_question(callback.message, state)
     else:
         await finish_practice(callback, state, answers)
 
@@ -1713,7 +2224,6 @@ async def finish_practice(
     data = await state.get_data()
     questions = data["questions"]
     subject = data["subject"]
-    level = data["level"]
     total = len(questions)
 
     correct_count = sum(
@@ -1728,7 +2238,15 @@ async def finish_practice(
     else:
         result_level = "🔴 Past"
 
-    async with aiosqlite.connect(DB_NAME) as db:
+    per_level = {lv: [0, 0] for lv in PRACTICE_BLOCK_ORDER}
+    for q, a in zip(questions, answers):
+        lv = q.get("level", "easy")
+        per_level.setdefault(lv, [0, 0])
+        per_level[lv][1] += 1
+        if a == q["correct"]:
+            per_level[lv][0] += 1
+
+    async with connect_db() as db:
         await db.execute(
             """
             INSERT INTO practice_results
@@ -1739,7 +2257,7 @@ async def finish_practice(
                 callback.from_user.id,
                 callback.from_user.full_name or "Foydalanuvchi",
                 subject,
-                level,
+                "mixed",
                 correct_count,
                 total,
                 percent,
@@ -1749,19 +2267,24 @@ async def finish_practice(
         )
         await db.commit()
 
+    level_lines = "\n".join(
+        f"{LEVEL_BADGES[lv]} {LEVEL_NAMES[lv]}: <b>{c}/{t}</b>"
+        for lv, (c, t) in per_level.items() if t
+    )
     key_line = "  ".join(f"{i + 1}-{q['correct']}" for i, q in enumerate(questions))
     summary = (
         f"🏁 <b>Bilim sinovi yakunlandi!</b>\n\n"
-        f"📘 <b>Fan:</b> {SUBJECT_NAMES[subject]}\n"
-        f"🎚 <b>Daraja:</b> {LEVEL_NAMES[level]}\n"
+        f"📚 <b>Fan:</b> {PRACTICE_NAMES[subject]}\n"
+        f"📊 <b>Darajalar bo‘yicha:</b>\n{level_lines}\n\n"
         f"✅ <b>To‘g‘ri javoblar:</b> {correct_count} / {total} ta\n"
-        f"📊 <b>Natija:</b> {percent}%\n"
+        f"🎯 <b>Natija:</b> {percent}%\n"
         f"🏅 <b>Baholash:</b> {result_level}\n\n"
         f"📋 <b>Javoblar kaliti:</b>\n{key_line}"
     )
 
     await state.clear()
-    await callback.message.answer(summary, parse_mode="HTML")
+    for chunk in chunk_text(summary):
+        await callback.message.answer(chunk, parse_mode="HTML")
     await callback.message.answer(
         "Asosiy menyu:", reply_markup=await get_main_menu(callback.from_user)
     )
@@ -1845,7 +2368,7 @@ def parse_questions_txt(text: str):
 
 
 async def insert_question(subject, level, question, opts, correct, photo_id, user_id):
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         await db.execute(
             """
             INSERT INTO question_bank
@@ -1881,7 +2404,7 @@ async def open_question_bank(message: types.Message, state: FSMContext):
 async def qb_stats(message: types.Message, state: FSMContext):
     if not await is_admin(message.from_user):
         return
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         async with db.execute(
             "SELECT subject, level, COUNT(*) FROM question_bank GROUP BY subject, level"
         ) as cursor:
@@ -1889,7 +2412,7 @@ async def qb_stats(message: types.Message, state: FSMContext):
 
     counts = {(s, l): c for s, l, c in rows}
     text = "📊 <b>Savollar bazasi statistikasi</b>\n\n"
-    for subj in ("english", "math"):
+    for subj in ("english", "math", "geometry"):
         text += f"<b>{SUBJECT_NAMES[subj]}</b>\n"
         for lvl in ("easy", "medium", "hard"):
             text += f"  • {LEVEL_NAMES[lvl]}: {counts.get((subj, lvl), 0)} ta\n"
@@ -2141,7 +2664,7 @@ async def qb_upload_file(message: types.Message, state: FSMContext):
     items, errors = parse_questions_txt(content)
     inserted = updated = 0
 
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         for it in items:
             if it["id"]:
                 async with db.execute(
@@ -2215,7 +2738,7 @@ async def qb_edit_start(message: types.Message, state: FSMContext):
 
 
 async def show_question_editor(message: types.Message, qid: int) -> bool:
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         async with db.execute(
             """
             SELECT id, subject, level, question, option_a, option_b, option_c, option_d, correct
@@ -2291,7 +2814,7 @@ async def qb_edit_field(callback: types.CallbackQuery, state: FSMContext):
         return
 
     if field == "delete":
-        async with aiosqlite.connect(DB_NAME) as db:
+        async with connect_db() as db:
             await db.execute("DELETE FROM question_bank WHERE id = ?", (qid,))
             await db.commit()
         await state.clear()
@@ -2377,7 +2900,7 @@ async def qb_edit_save(message: types.Message, state: FSMContext):
         await message.answer("Qiymat bo‘sh bo‘lmasligi kerak. Qaytadan:")
         return
 
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         await db.execute(
             f"UPDATE question_bank SET {columns[field]} = ? WHERE id = ?",
             (value, qid),
@@ -2407,7 +2930,7 @@ async def qb_delete(message: types.Message, state: FSMContext):
         return
 
     placeholders = ",".join("?" for _ in ids)
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         cursor = await db.execute(
             f"DELETE FROM question_bank WHERE id IN ({placeholders})", ids
         )
@@ -2459,7 +2982,7 @@ async def qb_export_level(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer()
         return
 
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         async with db.execute(
             """
             SELECT id, question, option_a, option_b, option_c, option_d, correct
@@ -2497,7 +3020,7 @@ async def qb_edit_correct_save(callback: types.CallbackQuery, state: FSMContext)
         await callback.answer("⛔️", show_alert=True)
         return
     _, sid, correct = callback.data.split(":")
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         await db.execute(
             "UPDATE question_bank SET correct = ? WHERE id = ?", (correct, int(sid))
         )
@@ -2517,7 +3040,7 @@ async def qb_edit_level_save(callback: types.CallbackQuery, state: FSMContext):
     if level not in LEVEL_NAMES:
         await callback.answer()
         return
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         await db.execute(
             "UPDATE question_bank SET level = ? WHERE id = ?", (level, int(sid))
         )
@@ -2530,16 +3053,76 @@ async def qb_edit_level_save(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ==================== MILLIY CEFR (MATEMATIKA) ====================
-@dp.message(F.text == "🇺🇿 Milliy CEFR")
-async def open_cefr(message: types.Message, state: FSMContext):
-    await state.clear()
-    if not await ensure_subscribed(message):
-        return
+# ==================== MILLIY CEFR ====================
+CEFR_ROOT_TEXT = (
+    "🇺🇿 <b>Milliy sertifikat (CEFR)</b>\n\n"
+    "Rasmiy imtihon variantlari bo‘limi. Fanni tanlang:"
+)
 
-    async with aiosqlite.connect(DB_NAME) as db:
+CEFR_SAMPLES = {
+    "english": [
+        ("If I ___ more time, I would learn another language.",
+         ["have", "had", "will have", "would have"], "B"),
+        ("The report ___ by the manager yesterday.",
+         ["was written", "wrote", "has written", "is writing"], "A"),
+        ("She is looking forward ___ from you.",
+         ["to hear", "hearing", "to hearing", "hear"], "C"),
+        ("The company decided to ___ the meeting until next week.",
+         ["put off", "put out", "put up", "put on"], "A"),
+        ("Neither of the answers ___ correct.",
+         ["are", "were", "is", "have been"], "C"),
+        ("By the time we arrived, the film ___.",
+         ["already started", "had already started", "has already started", "was already starting"], "B"),
+        ("She denied ___ the window.",
+         ["break", "to break", "breaking", "broken"], "C"),
+        ("You ___ have told me earlier — I could have helped.",
+         ["should", "must", "would", "can"], "A"),
+        ("Choose the synonym of «crucial»:",
+         ["minor", "essential", "doubtful", "optional"], "B"),
+        ("It was ___ a difficult exam that nobody passed.",
+         ["so", "such", "too", "very"], "B"),
+    ],
+    "math": [
+        ("Hisoblang: 2⁵ + 3².", ["39", "41", "43", "45"], "B"),
+        ("3x − 7 = 11 tenglamani yeching.", ["4", "5", "6", "7"], "C"),
+        ("240 sonining 25% ini toping.", ["60", "48", "72", "55"], "A"),
+        ("Arifmetik progressiyada a₁ = 3, d = 4. a₁₀ ni toping.",
+         ["41", "35", "43", "39"], "D"),
+        ("Asosi 12 cm, balandligi 9 cm bo‘lgan uchburchakning yuzini toping.",
+         ["48", "54", "60", "63"], "B"),
+        ("Hisoblang: 3/4 + 1/4.", ["1/2", "1", "3/4", "5/4"], "B"),
+        ("x² − 7x + 12 = 0 tenglamaning katta ildizini toping.",
+         ["2", "3", "4", "6"], "C"),
+        ("Radiusi 5 cm bo‘lgan aylananing yuzini toping (π = 3).",
+         ["75", "72", "78", "80"], "A"),
+        ("log₂ 32 ni hisoblang.", ["3", "4", "6", "5"], "D"),
+        ("20% i 16 ga teng bo‘lgan sonni toping.", ["60", "72", "80", "96"], "C"),
+    ],
+}
+
+
+def format_cefr_samples(subject: str) -> str:
+    answers = []
+    lines = [
+        f"🧪 <b>Namuna savollar — {SUBJECT_NAMES[subject]}</b>",
+        "",
+        "<i>Rasmiy imtihon uslubidagi 10 ta namuna savol:</i>",
+        "",
+    ]
+    for i, (question, options, correct) in enumerate(CEFR_SAMPLES[subject], start=1):
+        lines.append(f"<b>{i}.</b> {html.escape(question)}")
+        for letter, option in zip("ABCD", options):
+            lines.append(f"{letter}) {html.escape(option)}")
+        lines.append("")
+        answers.append(f"{i}-{correct}")
+    lines.append(f"✅ <b>Javoblar:</b> {', '.join(answers)}")
+    return "\n".join(lines)
+
+
+async def build_cefr_sub_view(subject: str, admin_user: bool):
+    async with connect_db() as db:
         async with db.execute(
-            "SELECT id, title FROM cefr_docs ORDER BY id"
+            "SELECT id, title FROM cefr_docs WHERE subject = ? ORDER BY id", (subject,)
         ) as cursor:
             rows = await cursor.fetchall()
 
@@ -2547,28 +3130,91 @@ async def open_cefr(message: types.Message, state: FSMContext):
         [InlineKeyboardButton(text=title or f"Hujjat #{doc_id}", callback_data=f"cefr:{doc_id}")]
         for doc_id, title in rows
     ]
-
-    admin_user = await is_admin(message.from_user)
+    buttons.append(
+        [InlineKeyboardButton(text="🧪 Namuna savollar (10 ta)", callback_data=f"cefr_sample:{subject}")]
+    )
     if admin_user:
         buttons.append(
-            [InlineKeyboardButton(text="➕ Hujjat qo‘shish", callback_data="cefr_add")]
+            [InlineKeyboardButton(text="➕ Hujjat qo‘shish", callback_data=f"cefr_add:{subject}")]
         )
+    buttons.append(
+        [InlineKeyboardButton(text="🔙 Orqaga", callback_data="cefr_back")]
+    )
 
     text = (
-        "🇺🇿 <b>Milliy sertifikat — matematika (CEFR)</b>\n\n"
-        "Rasmiy imtihon variantlari. Har bir hujjat 45 ta topshiriqdan iborat bo‘lib, "
-        "yopiq va ochiq turdagi savollarni o‘z ichiga oladi.\n\n"
-        "<i>Hujjatni yuklab olib, qog‘ozda ishlashingiz mumkin.</i>"
+        f"🇺🇿 <b>Milliy sertifikat — {SUBJECT_NAMES[subject]}</b>\n\n"
+        "Rasmiy imtihon variantlari. Hujjatni yuklab olib, qog‘ozda ishlashingiz mumkin."
     )
     if not rows:
         text += "\n\n<i>Hozircha hujjat yuklanmagan.</i>"
+    return text, InlineKeyboardMarkup(inline_keyboard=buttons)
 
-    if buttons:
-        await message.answer(
-            text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML"
+
+def get_cefr_root_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📘 Ingliz tili", callback_data="cefr_sub:english"),
+                InlineKeyboardButton(text="➗ Matematika", callback_data="cefr_sub:math"),
+            ]
+        ]
+    )
+
+
+@dp.message(F.text == "🇺🇿 Milliy CEFR")
+async def open_cefr(message: types.Message, state: FSMContext):
+    await state.clear()
+    if not await ensure_subscribed(message):
+        return
+    await message.answer(
+        CEFR_ROOT_TEXT, reply_markup=get_cefr_root_kb(), parse_mode="HTML"
+    )
+
+
+@dp.callback_query(F.data.startswith("cefr_sub:"))
+async def cefr_subsection(callback: types.CallbackQuery, state: FSMContext):
+    if not await ensure_subscribed_cb(callback):
+        return
+    subject = callback.data.split(":", 1)[1]
+    if subject not in SUBJECT_NAMES:
+        await callback.answer("Bo‘lim topilmadi.", show_alert=True)
+        return
+    await state.clear()
+    admin_user = await is_admin(callback.from_user)
+    text, kb = await build_cefr_sub_view(subject, admin_user)
+    await callback.answer()
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+@dp.callback_query(F.data == "cefr_back")
+async def cefr_back(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.answer()
+    try:
+        await callback.message.edit_text(
+            CEFR_ROOT_TEXT, reply_markup=get_cefr_root_kb(), parse_mode="HTML"
         )
-    else:
-        await message.answer(text, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(
+            CEFR_ROOT_TEXT, reply_markup=get_cefr_root_kb(), parse_mode="HTML"
+        )
+
+
+@dp.callback_query(F.data.startswith("cefr_sample:"))
+async def cefr_sample(callback: types.CallbackQuery):
+    if not await ensure_subscribed_cb(callback):
+        return
+    subject = callback.data.split(":", 1)[1]
+    if subject not in CEFR_SAMPLES:
+        await callback.answer("Bo‘lim topilmadi.", show_alert=True)
+        return
+    await callback.answer()
+    await callback.message.answer(
+        format_cefr_samples(subject), parse_mode="HTML"
+    )
 
 
 @dp.callback_query(F.data.startswith("cefr:"))
@@ -2576,7 +3222,7 @@ async def cefr_send_doc(callback: types.CallbackQuery):
     if not await ensure_subscribed_cb(callback):
         return
     doc_id = int(callback.data.split(":")[1])
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with connect_db() as db:
         async with db.execute(
             "SELECT title, file_id FROM cefr_docs WHERE id = ?", (doc_id,)
         ) as cursor:
@@ -2598,15 +3244,18 @@ async def cefr_send_doc(callback: types.CallbackQuery):
     )
 
 
-@dp.callback_query(F.data == "cefr_add")
+@dp.callback_query(F.data.startswith("cefr_add"))
 async def cefr_add_start(callback: types.CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user):
         await callback.answer("⛔️", show_alert=True)
         return
+    parts = callback.data.split(":", 1)
+    subject = parts[1] if len(parts) > 1 and parts[1] in SUBJECT_NAMES else "math"
     await state.set_state(CefrAdd.waiting_doc)
+    await state.update_data(subject=subject)
     await callback.answer()
     await callback.message.answer(
-        "📄 Milliy CEFR bo‘limiga qo‘shiladigan PDF faylni yuboring:",
+        f"📄 «{SUBJECT_NAMES[subject]}» bo‘limiga qo‘shiladigan PDF faylni yuboring:",
         reply_markup=cancel_menu,
     )
 
@@ -2636,17 +3285,23 @@ async def cefr_add_title(message: types.Message, state: FSMContext):
         await message.answer("Nom bo‘sh bo‘lmasligi kerak. Qaytadan:")
         return
 
-    async with aiosqlite.connect(DB_NAME) as db:
+    subject = data.get("subject", "math")
+    if subject not in SUBJECT_NAMES:
+        subject = "math"
+
+    async with connect_db() as db:
         await db.execute(
-            "INSERT INTO cefr_docs (title, file_id, file_name, added_at) VALUES (?, ?, ?, ?)",
-            (title, data.get("file_id", ""), data.get("file_name", ""), time.time()),
+            "INSERT INTO cefr_docs (title, file_id, file_name, subject, added_at) VALUES (?, ?, ?, ?, ?)",
+            (title, data.get("file_id", ""), data.get("file_name", ""), subject, time.time()),
         )
         await db.commit()
 
     await state.clear()
+    admin_user = await is_admin(message.from_user)
+    text, kb = await build_cefr_sub_view(subject, admin_user)
     await message.answer(
-        f"✅ «{html.escape(title)}» hujjati qo‘shildi.",
-        reply_markup=await get_main_menu(message.from_user),
+        f"✅ «{html.escape(title)}» hujjati qo‘shildi.\n\n{text}",
+        reply_markup=kb,
         parse_mode="HTML",
     )
 
@@ -2701,6 +3356,7 @@ async def render_keep_alive_loop():
 # ==================== ISHGA TUSHIRISH ====================
 async def main():
     await init_db()
+    await repair_db()
     await seed_question_bank()
     await start_web_server()
     # Orqa fonda test muddatlarini doimiy tekshiruvchi vazifa

@@ -1,7 +1,7 @@
 [
  {
   "subject": "english",
-  "level": "easy",
+  "level": "hard",
   "question": "Choose the word closest in meaning to 'mitigate'.",
   "option_a": "lessen",
   "option_b": "measure",
@@ -12,7 +12,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "She ___ at the university for three years before she moved abroad.",
   "option_a": "had been studying",
   "option_b": "has studied",
@@ -23,7 +23,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "The person to ___ I spoke was extremely helpful.",
   "option_a": "whose",
   "option_b": "whom",
@@ -34,7 +34,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "The sample was relatively small; ___, the results should be interpreted cautiously.",
   "option_a": "otherwise",
   "option_b": "therefore",
@@ -45,7 +45,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "Choose the grammatically correct sentence.",
   "option_a": "Neither of the explanations is convincing.",
   "option_b": "Neither explanations is convincing.",
@@ -78,7 +78,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "If he ___ more regularly, he would be making better progress now.",
   "option_a": "had practised",
   "option_b": "will practise",
@@ -89,7 +89,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "The results were surprisingly ___, given the limited data. (CONSIST)",
   "option_a": "consistent",
   "option_b": "consistently",
@@ -100,7 +100,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "The proposal, ___ had been revised several times, was finally accepted.",
   "option_a": "which",
   "option_b": "where",
@@ -111,7 +111,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "The plan is financially ___ in the long term. (SUSTAIN)",
   "option_a": "sustainably",
   "option_b": "sustainable",
@@ -122,7 +122,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "hard",
   "question": "It is essential that every applicant ___ the form in full.",
   "option_a": "is completing",
   "option_b": "completed",
@@ -144,7 +144,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "There is considerable ___ about the long-term effects. (CERTAIN)",
   "option_a": "uncertain",
   "option_b": "uncertainty",
@@ -199,7 +199,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "The word 'reluctant' is closest in meaning to:",
   "option_a": "unwilling",
   "option_b": "certain",
@@ -210,7 +210,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "hard",
   "question": "No sooner ___ the station than the train left.",
   "option_a": "we had reached",
   "option_b": "had we reached",
@@ -221,7 +221,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "The proposal was rejected on the ___ that it was too costly.",
   "option_a": "grounds",
   "option_b": "cause",
@@ -243,7 +243,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "In the sentence 'The evidence was compelling', 'compelling' means:",
   "option_a": "ordinary",
   "option_b": "incomplete",
@@ -254,7 +254,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "This time tomorrow, we ___ over the Atlantic.",
   "option_a": "will have fly",
   "option_b": "fly",
@@ -265,7 +265,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "The report ___ by the committee before it was published.",
   "option_a": "would approve",
   "option_b": "was approve",
@@ -276,7 +276,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "Choose the sentence closest in meaning to: 'People believe that the painting is authentic.'",
   "option_a": "People are believed the painting authentic.",
   "option_b": "The painting believed to be authentic.",
@@ -287,7 +287,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "By the time we arrived, the film ___ .",
   "option_a": "was already start",
   "option_b": "had already started",
@@ -430,7 +430,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "If I ___ more time, I would learn French.",
   "option_a": "will have",
   "option_b": "have",
@@ -474,7 +474,7 @@
  },
  {
   "subject": "english",
-  "level": "easy",
+  "level": "medium",
   "question": "He is used to ___ up early.",
   "option_a": "got",
   "option_b": "to get",
@@ -551,7 +551,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "easy",
   "question": "We should not give ___ just because the task is difficult.",
   "option_a": "in",
   "option_b": "away",
@@ -562,7 +562,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "easy",
   "question": "He hopes to become ___ engineer after graduation.",
   "option_a": "an",
   "option_b": "a",
@@ -584,7 +584,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "easy",
   "question": "They crossed ___ Pacific Ocean during the expedition.",
   "option_a": "—",
   "option_b": "an",
@@ -606,7 +606,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "hard",
   "question": "Read the text and answer. \"The restoration of old buildings is sometimes criticised as expensive, yet it can preserve local identity and reduce construction waste. The process is not always straightforward: older structures may require specialist materials and careful adaptation to modern safety standards. Nevertheless, when planned well, restoration can combine historical value with contemporary use.\" Which statement best reflects the writer's view of restoration?",
   "option_a": "It has challenges but can provide important benefits.",
   "option_b": "Its only benefit is reducing construction costs.",
@@ -639,7 +639,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "hard",
   "question": "Had they informed us earlier, we ___ alternative arrangements.",
   "option_a": "would make",
   "option_b": "can make",
@@ -683,7 +683,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "hard",
   "question": "She was appointed ___ head of the research department.",
   "option_a": "an",
   "option_b": "—",
@@ -771,7 +771,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "easy",
   "question": "A 'consequence' is:",
   "option_a": "a method of comparison",
   "option_b": "a reason for refusing",
@@ -804,7 +804,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "hard",
   "question": "Under no circumstances ___ confidential information be shared.",
   "option_a": "has",
   "option_b": "does",
@@ -826,7 +826,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "hard",
   "question": "Hardly ___ the announcement when questions began to arise.",
   "option_a": "she had finished",
   "option_b": "has she finish",
@@ -837,7 +837,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "hard",
   "question": "Were the company ___ its prices, demand might increase.",
   "option_a": "reduced",
   "option_b": "reduce",
@@ -848,7 +848,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "easy",
   "question": "She is the ___ student in the class.",
   "option_a": "good",
   "option_b": "well",
@@ -859,7 +859,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "easy",
   "question": "Choose the correctly punctuated sentence.",
   "option_a": "Where are you going? she asked.",
   "option_b": "“Where are you going”, she asked?",
@@ -870,7 +870,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "easy",
   "question": "He has been waiting ___ two hours.",
   "option_a": "during",
   "option_b": "for",
@@ -881,7 +881,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "easy",
   "question": "If it rains, we ___ at home.",
   "option_a": "will stay",
   "option_b": "stayed",
@@ -892,7 +892,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "hard",
   "question": "Rarely ___ such a beautiful view.",
   "option_a": "I have saw",
   "option_b": "have seen I",
@@ -903,7 +903,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "easy",
   "question": "Choose the correct spelling.",
   "option_a": "envirounment",
   "option_b": "enviroment",
@@ -914,7 +914,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "easy",
   "question": "He missed the bus; ___, he was late.",
   "option_a": "meanwhile",
   "option_b": "although",
@@ -936,7 +936,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "hard",
   "question": "No sooner ___ home than it started to rain.",
   "option_a": "did we arrived",
   "option_b": "had we arrived",
@@ -958,7 +958,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "easy",
   "question": "Read: “The town library will be closed on Monday for repairs. It will reopen at 9 a.m. on Tuesday.” When will the library reopen?",
   "option_a": "On Monday morning.",
   "option_b": "At 9 p.m. on Tuesday.",
@@ -969,7 +969,7 @@
  },
  {
   "subject": "english",
-  "level": "medium",
+  "level": "easy",
   "question": "This is the book ___ I told you about.",
   "option_a": "who",
   "option_b": "that",
@@ -991,7 +991,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "medium",
   "question": "The device is inexpensive, ___ it is surprisingly reliable.",
   "option_a": "because",
   "option_b": "yet",
@@ -1013,7 +1013,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "medium",
   "question": "The route is shorter; ___, it is considerably more dangerous.",
   "option_a": "therefore",
   "option_b": "however",
@@ -1024,7 +1024,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "medium",
   "question": "His explanation lacked ___ and confused the audience. (CLEAR)",
   "option_a": "clear",
   "option_b": "clearly",
@@ -1046,7 +1046,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "medium",
   "question": "The committee will ___ a decision after reviewing the evidence.",
   "option_a": "make up",
   "option_b": "arrive",
@@ -1101,7 +1101,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "medium",
   "question": "We need to take these concerns into ___.",
   "option_a": "mind",
   "option_b": "attention",
@@ -1134,7 +1134,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "medium",
   "question": "___ the initial setbacks, the project was completed on time.",
   "option_a": "Despite",
   "option_b": "Unless",
@@ -1178,7 +1178,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "medium",
   "question": "The findings are consistent ___ earlier research.",
   "option_a": "to",
   "option_b": "by",
@@ -1189,7 +1189,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "medium",
   "question": "By next June, he ___ the course.",
   "option_a": "will completing",
   "option_b": "has completed",
@@ -1200,7 +1200,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "easy",
   "question": "Choose the correct linker: ___ it was cold, they went swimming.",
   "option_a": "Unless",
   "option_b": "Because",
@@ -1211,7 +1211,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "medium",
   "question": "Choose the passive form: Someone has stolen my bag.",
   "option_a": "My bag has been stolen.",
   "option_b": "My bag is stealing.",
@@ -1222,7 +1222,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "easy",
   "question": "Choose the synonym of 'rapid'.",
   "option_a": "weak",
   "option_b": "quiet",
@@ -1233,7 +1233,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "easy",
   "question": "Choose the antonym of 'expand'.",
   "option_a": "increase",
   "option_b": "shrink",
@@ -1244,7 +1244,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "easy",
   "question": "Choose the correct preposition: I'm interested ___ science.",
   "option_a": "for",
   "option_b": "on",
@@ -1255,7 +1255,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "easy",
   "question": "___ sun rises in the east.",
   "option_a": "No article",
   "option_b": "A",
@@ -1266,7 +1266,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "medium",
   "question": "The more you practise, ___ you become.",
   "option_a": "most confident",
   "option_b": "the most confident",
@@ -1277,7 +1277,7 @@
  },
  {
   "subject": "english",
-  "level": "hard",
+  "level": "easy",
   "question": "She ___ to school every day.",
   "option_a": "goes",
   "option_b": "go",
@@ -1322,7 +1322,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "x² + 1x - 12 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² + x - 12 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "-1",
   "option_b": "-4",
   "option_c": "1",
@@ -1344,7 +1344,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "x² + 4x + 0 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² + 4x = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "4",
   "option_b": "-2",
   "option_c": "0",
@@ -1411,7 +1411,7 @@
   "subject": "math",
   "level": "easy",
   "question": "sin 90° ning qiymatini toping.",
-  "option_a": "(cid:214)3/2",
+  "option_a": "√3/2",
   "option_b": "1",
   "option_c": "1/2",
   "option_d": "0",
@@ -1421,7 +1421,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "x² - 0x - 25 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - 25 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "2",
   "option_b": "-25",
   "option_c": "0",
@@ -1567,7 +1567,7 @@
   "question": "cos 60° ning qiymatini toping.",
   "option_a": "1/2",
   "option_b": "1",
-  "option_c": "(cid:214)3/2",
+  "option_c": "√3/2",
   "option_d": "0",
   "correct": "A",
   "source": "math_100"
@@ -1630,7 +1630,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "x² - 1x - 2 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - x - 2 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "-1",
   "option_b": "3",
   "option_c": "1",
@@ -2092,7 +2092,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "x² - 1x - 6 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - x - 6 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "-6",
   "option_b": "3",
   "option_c": "1",
@@ -2290,7 +2290,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "x² - 4x + 0 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - 4x = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "0",
   "option_b": "6",
   "option_c": "4",
@@ -2378,7 +2378,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "f(x) = 3x + 0 bo‘lsa, f(-5) ni toping.",
+  "question": "f(x) = 3x bo‘lsa, f(-5) ni toping.",
   "option_a": "-18",
   "option_b": "-15",
   "option_c": "3",
@@ -2466,7 +2466,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "x² + 2x + 0 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² + 2x = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "-3",
   "option_b": "0",
   "option_c": "2",
@@ -2730,7 +2730,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "6x + 0 = -18 tenglamani yeching.",
+  "question": "6x = -18 tenglamani yeching.",
   "option_a": "1",
   "option_b": "-4",
   "option_c": "3",
@@ -3038,7 +3038,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "x² - 0x - 4 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - 4 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "2",
   "option_b": "-4",
   "option_c": "9",
@@ -3269,7 +3269,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "x² - 0x - 9 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - 9 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "2",
   "option_b": "0",
   "option_c": "-9",
@@ -3698,7 +3698,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "8x + 0 = 56 tenglamani yeching.",
+  "question": "8x = 56 tenglamani yeching.",
   "option_a": "7",
   "option_b": "11",
   "option_c": "4",
@@ -4028,7 +4028,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "x² - 3x + 0 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - 3x = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "5",
   "option_b": "-3",
   "option_c": "3",
@@ -4083,7 +4083,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "x² - 0x + 0 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "-1",
   "option_b": "3",
   "option_c": "2",
@@ -4919,7 +4919,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "x² + 1x - 2 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² + x - 2 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "-4",
   "option_b": "1",
   "option_c": "-2",
@@ -4952,7 +4952,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "x² + 6x + 0 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² + 6x = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "0",
   "option_b": "6",
   "option_c": "-4",
@@ -5326,7 +5326,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "9x + 0 = -27 tenglamani yeching.",
+  "question": "9x = -27 tenglamani yeching.",
   "option_a": "-5",
   "option_b": "1",
   "option_c": "3",
@@ -5711,7 +5711,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "9x + 0 = 90 tenglamani yeching.",
+  "question": "9x = 90 tenglamani yeching.",
   "option_a": "-10",
   "option_b": "13",
   "option_c": "9",
@@ -6085,7 +6085,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "f(x) = 2x + 0 bo‘lsa, f(-2) ni toping.",
+  "question": "f(x) = 2x bo‘lsa, f(-2) ni toping.",
   "option_a": "-7",
   "option_b": "-4",
   "option_c": "2",
@@ -6404,7 +6404,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "f(x) = 4x + 0 bo‘lsa, f(-5) ni toping.",
+  "question": "f(x) = 4x bo‘lsa, f(-5) ni toping.",
   "option_a": "-20",
   "option_b": "-13",
   "option_c": "-16",
@@ -6415,7 +6415,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "f(x) = 3x + 0 bo‘lsa, f(-1) ni toping.",
+  "question": "f(x) = 3x bo‘lsa, f(-1) ni toping.",
   "option_a": "2",
   "option_b": "-3",
   "option_c": "3",
@@ -6844,7 +6844,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "f(x) = 2x + 0 bo‘lsa, f(3) ni toping.",
+  "question": "f(x) = 2x bo‘lsa, f(3) ni toping.",
   "option_a": "3",
   "option_b": "6",
   "option_c": "8",
@@ -6987,7 +6987,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "f(x) = 6x + 0 bo‘lsa, f(0) ni toping.",
+  "question": "f(x) = 6x bo‘lsa, f(0) ni toping.",
   "option_a": "0",
   "option_b": "7",
   "option_c": "-2",
@@ -8109,7 +8109,7 @@
  {
   "subject": "math",
   "level": "easy",
-  "question": "8x + 0 = 40 tenglamani yeching.",
+  "question": "8x = 40 tenglamani yeching.",
   "option_a": "8",
   "option_b": "5",
   "option_c": "1",
@@ -9957,7 +9957,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "x² - 0x - 36 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - 36 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "-36",
   "option_b": "2",
   "option_c": "0",
@@ -10067,7 +10067,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "x² + 5x + 0 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² + 5x = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "-3",
   "option_b": "-5",
   "option_c": "5",
@@ -10837,12 +10837,12 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "150 sonining 25 foizini toping.",
-  "option_a": "113",
-  "option_b": "32",
-  "option_c": "42",
-  "option_d": "37",
-  "correct": "D",
+  "question": "180 sonining 25 foizini toping.",
+  "option_a": "40",
+  "option_b": "45",
+  "option_c": "50",
+  "option_d": "55",
+  "correct": "B",
   "source": "math_100"
  },
  {
@@ -11046,7 +11046,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "7x + 0 = 28 tenglamani yeching.",
+  "question": "7x = 28 tenglamani yeching.",
   "option_a": "0",
   "option_b": "4",
   "option_c": "-4",
@@ -11343,7 +11343,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "x² + 1x - 20 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² + x - 20 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "-20",
   "option_b": "-1",
   "option_c": "-3",
@@ -12245,7 +12245,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "8x + 0 = 16 tenglamani yeching.",
+  "question": "8x = 16 tenglamani yeching.",
   "option_a": "1",
   "option_b": "4",
   "option_c": "-2",
@@ -12729,7 +12729,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "x² + 3x + 0 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² + 3x = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "0",
   "option_b": "3",
   "option_c": "-1",
@@ -13576,7 +13576,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "x² - 5x + 0 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - 5x = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "5",
   "option_b": "0",
   "option_c": "-5",
@@ -13609,7 +13609,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "f(x) = 6x + 0 bo‘lsa, f(6) ni toping.",
+  "question": "f(x) = 6x bo‘lsa, f(6) ni toping.",
   "option_a": "6",
   "option_b": "42",
   "option_c": "41",
@@ -13719,7 +13719,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "f(x) = 5x + 0 bo‘lsa, f(1) ni toping.",
+  "question": "f(x) = 5x bo‘lsa, f(1) ni toping.",
   "option_a": "14",
   "option_b": "5",
   "option_c": "6",
@@ -13807,7 +13807,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "f(x) = 6x + 0 bo‘lsa, f(3) ni toping.",
+  "question": "f(x) = 6x bo‘lsa, f(3) ni toping.",
   "option_a": "15",
   "option_b": "6",
   "option_c": "24",
@@ -13840,7 +13840,7 @@
  {
   "subject": "math",
   "level": "medium",
-  "question": "f(x) = 4x + 0 bo‘lsa, f(-4) ni toping.",
+  "question": "f(x) = 4x bo‘lsa, f(-4) ni toping.",
   "option_a": "-9",
   "option_b": "-12",
   "option_c": "4",
@@ -15369,7 +15369,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² - 6x + 0 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - 6x = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "8",
   "option_b": "0",
   "option_c": "-6",
@@ -15415,7 +15415,7 @@
   "level": "hard",
   "question": "tan 45° ning qiymatini toping.",
   "option_a": "1",
-  "option_b": "(cid:214)3",
+  "option_b": "√3",
   "option_c": "1/2",
   "option_d": "0",
   "correct": "A",
@@ -15547,7 +15547,7 @@
   "level": "hard",
   "question": "sin 30° ning qiymatini toping.",
   "option_a": "0",
-  "option_b": "(cid:214)3/2",
+  "option_b": "√3/2",
   "option_c": "1",
   "option_d": "1/2",
   "correct": "D",
@@ -16051,7 +16051,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² + 1x - 30 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² + x - 30 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "2",
   "option_b": "-30",
   "option_c": "-1",
@@ -16095,7 +16095,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² - 1x - 30 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - x - 30 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "-1",
   "option_b": "-30",
   "option_c": "1",
@@ -16161,7 +16161,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² + 1x - 6 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² + x - 6 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "1",
   "option_b": "-3",
   "option_c": "-1",
@@ -16304,7 +16304,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = 2x + 0 bo‘lsa, f(-4) ni toping.",
+  "question": "f(x) = 2x bo‘lsa, f(-4) ni toping.",
   "option_a": "2",
   "option_b": "-7",
   "option_c": "-8",
@@ -16359,7 +16359,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² - 0x - 1 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - 1 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "-1",
   "option_b": "0",
   "option_c": "2",
@@ -16667,7 +16667,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² - 1x + 0 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - x = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "3",
   "option_b": "0",
   "option_c": "-1",
@@ -17316,7 +17316,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "9x + 0 = 9 tenglamani yeching.",
+  "question": "9x = 9 tenglamani yeching.",
   "option_a": "3",
   "option_b": "0",
   "option_c": "-1",
@@ -17723,7 +17723,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² - 1x - 20 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - x - 20 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "-1",
   "option_b": "3",
   "option_c": "-20",
@@ -17822,7 +17822,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² - 1x - 12 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - x - 12 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "1",
   "option_b": "-1",
   "option_c": "3",
@@ -17932,7 +17932,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "3x + 0 = 9 tenglamani yeching.",
+  "question": "3x = 9 tenglamani yeching.",
   "option_a": "1",
   "option_b": "3",
   "option_c": "-3",
@@ -18273,7 +18273,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "6x + 0 = -24 tenglamani yeching.",
+  "question": "6x = -24 tenglamani yeching.",
   "option_a": "-6",
   "option_b": "-2",
   "option_c": "-4",
@@ -18548,7 +18548,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² - 2x + 0 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² - 2x = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "4",
   "option_b": "-2",
   "option_c": "2",
@@ -19032,7 +19032,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "f(x) = 7x + 0 bo‘lsa, f(4) ni toping.",
+  "question": "f(x) = 7x bo‘lsa, f(4) ni toping.",
   "option_a": "35",
   "option_b": "7",
   "option_c": "25",
@@ -19714,12 +19714,12 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "150 sonining 15 foizini toping.",
-  "option_a": "27",
-  "option_b": "17",
-  "option_c": "22",
-  "option_d": "128",
-  "correct": "C",
+  "question": "180 sonining 15 foizini toping.",
+  "option_a": "24",
+  "option_b": "27",
+  "option_c": "30",
+  "option_d": "33",
+  "correct": "B",
   "source": "math_100"
  },
  {
@@ -19944,8 +19944,8 @@
  },
  {
   "subject": "math",
-  "level": "hard",
-  "question": "x² - 0x - 16 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "level": "easy",
+  "question": "x² - 16 = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "-16",
   "option_b": "2",
   "option_c": "0",
@@ -20033,7 +20033,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "8x + 0 = -24 tenglamani yeching.",
+  "question": "8x = -24 tenglamani yeching.",
   "option_a": "1",
   "option_b": "-3",
   "option_c": "3",
@@ -21089,7 +21089,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "x² + 1x + 0 = 0 tenglamaning ildizlari yig‘indisini toping.",
+  "question": "x² + x = 0 tenglamaning ildizlari yig‘indisini toping.",
   "option_a": "1",
   "option_b": "-1",
   "option_c": "0",
@@ -21133,7 +21133,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "8x + 0 = -64 tenglamani yeching.",
+  "question": "8x = -64 tenglamani yeching.",
   "option_a": "-8",
   "option_b": "-11",
   "option_c": "8",
@@ -21210,7 +21210,7 @@
  {
   "subject": "math",
   "level": "hard",
-  "question": "8x + 0 = 48 tenglamani yeching.",
+  "question": "8x = 48 tenglamani yeching.",
   "option_a": "6",
   "option_b": "-6",
   "option_c": "4",
