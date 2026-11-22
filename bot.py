@@ -37,33 +37,40 @@ DB_NAME = os.environ.get("DB_PATH") or os.path.join(BASE_DIR, "tests_rasch.db")
 SEED_FILES = [
     os.path.join(BASE_DIR, "seed_questions.json"),
     os.path.join(BASE_DIR, "seed_generated.json"),
+    os.path.join(BASE_DIR, "seed_iq.json"),
     os.path.join(BASE_DIR, "seed_curriculum.json"),
 ]
 
 SUBJECT_NAMES = {
     "english": "Ingliz tili",
-    "math": "Matematika",
+    "math": "Algebra",
     "geometry": "Geometriya",
+    "iq": "IQ test",
 }
-PRACTICE_NAMES = {**SUBJECT_NAMES, "mixed": "Aralash (Matematika + Geometriya)"}
+PRACTICE_NAMES = {**SUBJECT_NAMES, "mixed": "Aralash (Algebra + Geometriya)"}
 LEVEL_NAMES = {"easy": "Oson", "medium": "O‘rtacha", "hard": "Qiyin"}
 LEVEL_BADGES = {"easy": "🟢", "medium": "🟡", "hard": "🔴"}
 PRACTICE_SIZES = (10, 20, 30, 45)
 DEFAULT_PRACTICE_SIZE = 30
 
 GEOMETRY_RE = re.compile(
-    r"(perimetr|yuzini|yuzasi|\byuza|hajmini|\bhajm|aylana|doira|shar(?!q)|kub|konus|"
-    r"silindr|parallelepiped|trapes|romb|parallelogramm|uchburchak|to‘rtburchak|"
+    r"(perimetr|yuzini|yuzasi|\byuza|\bhajm|aylana|doira|shar(?!q)|\bkub|konus|silindr|"
+    r"parallelepiped|trapes|romb|parallelogramm|uchburchak|to‘rtburchak|"
     r"burchak|gradus|kesma|vatar|urinma|prizma|piramida|sfera|geometriya|pifagor|"
-    r"gipotenuza|katet|diagonal|koordinata)",
+    r"gipotenuza|katet|diagonal|koordinata|nuqtalar orasidagi masofa)",
+    re.I,
+)
+# Geometriya emasligini aniq ko'rsatuvchi so'zlar (EKUB ichidagi "kub" kabilar uchun)
+NON_GEOMETRY_RE = re.compile(
+    r"(ekub|ekuk|eng katta umumiy|eng kichik umumiy|ehtimol|sharq|koeffitsiyent)",
     re.I,
 )
 
 
 def is_geometry_question(text: str) -> bool:
-    """Matematika bazasidagi geometriyaga oid savolni aniqlaydi."""
+    """Berilgan savol geometriyaga tegishli yoki yo'qligini aniqlaydi."""
     t = (text or "").lower()
-    if "ehtimol" in t or "sharq" in t or "koeffitsiyent" in t:
+    if NON_GEOMETRY_RE.search(t):
         return False
     return bool(GEOMETRY_RE.search(t))
 
@@ -349,6 +356,20 @@ def norm_question(text: str) -> str:
     return " ".join((text or "").split()).lower()
 
 
+SUBSCRIPT_DIGITS = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
+
+
+def fix_progression_text(text: str) -> str:
+    """Eski progressiya savollaridagi 'an=' va 'a8' yozuvlarini tuzatadi."""
+    text = (text or "").replace("progressiyada an=", "progressiyada a₁=")
+    text = re.sub(r"a₁\s*=\s*", "a₁ = ", text)
+    return re.sub(
+        r"\. a(\d+) hadni toping",
+        lambda m: ". a" + m.group(1).translate(SUBSCRIPT_DIGITS) + " hadni toping",
+        text,
+    )
+
+
 def escape_mojibake(text: str) -> str:
     """Eski seed fayllardan tushgan (cid:...) belgilarini tiklaydi."""
     return (text or "").replace("(cid:214)", "√")
@@ -433,6 +454,66 @@ async def repair_db():
         except Exception as e:
             logging.warning(f"geometry migratsiyasida xatolik: {e}")
 
+        # Xato bilan geometriyaga tushgan algebra savollarini (EKUB/EKUK) qaytarish
+        try:
+            async with db.execute(
+                "SELECT id, question FROM question_bank WHERE subject = 'geometry'"
+            ) as cursor:
+                geo_rows = await cursor.fetchall()
+            wrong = [
+                (qid, q) for qid, q in geo_rows
+                if re.search(
+                    r"ekub|ekuk|eng katta umumiy|eng kichik umumiy", (q or "").lower()
+                )
+            ]
+            if wrong:
+                async with db.execute(
+                    "SELECT question FROM question_bank WHERE subject = 'math'"
+                ) as cursor:
+                    math_keys = {norm_question(r[0]) for r in await cursor.fetchall()}
+                for qid, q in wrong:
+                    if norm_question(q) in math_keys:
+                        await db.execute("DELETE FROM question_bank WHERE id = ?", (qid,))
+                    else:
+                        await db.execute(
+                            "UPDATE question_bank SET subject = 'math' WHERE id = ?", (qid,)
+                        )
+                logging.info(f"Algebraga qaytarildi: {len(wrong)} ta savol.")
+        except Exception as e:
+            logging.warning(f"algebra/geometry migratsiyasida xatolik: {e}")
+
+        # Eski progressiya savollaridagi "an=" va "a8" yozuvlarini tuzatish
+        try:
+            async with db.execute(
+                "SELECT id, question FROM question_bank WHERE question LIKE '%progressiyada %'"
+            ) as cursor:
+                ap_rows = await cursor.fetchall()
+            for qid, q in ap_rows:
+                fixed_q = fix_progression_text(q)
+                if fixed_q != q:
+                    await db.execute(
+                        "UPDATE question_bank SET question = ? WHERE id = ?", (fixed_q, qid)
+                    )
+            # Tuzatishdan keyin paydo bo'lgan bir xil matnli dublikatlarni olib tashlash
+            async with db.execute(
+                "SELECT id, subject, question, source FROM question_bank "
+                "WHERE question LIKE '%progressiyada %'"
+            ) as cursor:
+                prog_rows = await cursor.fetchall()
+            groups = {}
+            for qid, subject, question, source in prog_rows:
+                groups.setdefault((subject, norm_question(question)), []).append((qid, source))
+            for rows in groups.values():
+                if len(rows) < 2:
+                    continue
+                keepers = [r for r in rows if r[1] != "admin"] or rows
+                keep_id = max(keepers, key=lambda r: r[0])[0]
+                for qid, _ in rows:
+                    if qid != keep_id:
+                        await db.execute("DELETE FROM question_bank WHERE id = ?", (qid,))
+        except Exception as e:
+            logging.warning(f"progressiya matnini tuzatishda xatolik: {e}")
+
         await db.commit()
 
 
@@ -459,9 +540,10 @@ async def seed_question_bank():
                 items = json.load(f)
             for it in items:
                 subject = it["subject"]
-                if subject == "math" and is_geometry_question(it["question"]):
+                seed_question = fix_progression_text(it["question"])
+                if subject == "math" and is_geometry_question(seed_question):
                     subject = "geometry"
-                key = (subject, norm_question(it["question"]))
+                key = (subject, norm_question(seed_question))
                 row = existing.get(key)
                 if row is None:
                     await db.execute(
@@ -471,13 +553,13 @@ async def seed_question_bank():
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, 0, ?)
                         """,
                         (
-                            subject, it["level"], it["question"],
+                            subject, it["level"], seed_question,
                             it["option_a"], it["option_b"], it["option_c"], it["option_d"],
                             it["correct"], it.get("source", "seed"), now,
                         ),
                     )
                     added += 1
-                    existing[key] = (None, subject, it["level"], it["question"],
+                    existing[key] = (None, subject, it["level"], seed_question,
                                      it["option_a"], it["option_b"], it["option_c"],
                                      it["option_d"], it["correct"], it.get("source", "seed"))
                     continue
@@ -486,7 +568,7 @@ async def seed_question_bank():
                     continue
 
                 new_vals = (
-                    it["level"], it["question"],
+                    it["level"], seed_question,
                     it["option_a"], it["option_b"], it["option_c"], it["option_d"],
                     it["correct"],
                 )
@@ -624,12 +706,13 @@ async def get_main_menu(user) -> ReplyKeyboardMarkup:
         [KeyboardButton(text="📝 Test yechish")],
         [
             KeyboardButton(text="📘 Ingliz tili"),
-            KeyboardButton(text="➗ Matematika"),
+            KeyboardButton(text="➗ Algebra"),
         ],
         [
             KeyboardButton(text="📐 Geometriya"),
             KeyboardButton(text="🔀 Aralash"),
         ],
+        [KeyboardButton(text="🧠 IQ test")],
         [KeyboardButton(text="🇺🇿 Milliy CEFR")],
         [KeyboardButton(text="📊 Javoblar va o‘rinlar")],
     ]
@@ -696,9 +779,10 @@ def get_bank_subject_kb(prefix: str) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="📘 Ingliz tili", callback_data=f"{prefix}:english"),
-                InlineKeyboardButton(text="➗ Matematika", callback_data=f"{prefix}:math"),
+                InlineKeyboardButton(text="➗ Algebra", callback_data=f"{prefix}:math"),
             ],
             [InlineKeyboardButton(text="📐 Geometriya", callback_data=f"{prefix}:geometry")],
+            [InlineKeyboardButton(text="🧠 IQ test", callback_data=f"{prefix}:iq")],
             [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="qb:cancel")],
         ]
     )
@@ -1923,14 +2007,15 @@ async def show_answers_and_ranks(message: types.Message, state: FSMContext):
     await state.clear()
 
 
-# ==================== BILIM SINOVI (INGLIZ / MATEMATIKA / GEOMETRIYA / ARALASH) ====================
+# ==================== BILIM SINOVI (INGLIZ / ALGEBRA / GEOMETRIYA / IQ / ARALASH) ====================
 PRACTICE_BLOCK_ORDER = ("easy", "medium", "hard")
-PRACTICE_SUBJECTS = {"english", "math", "geometry", "mixed"}
+PRACTICE_SUBJECTS = {"english", "math", "geometry", "iq", "mixed"}
 
 PRACTICE_BUTTONS = {
     "📘 Ingliz tili": "english",
-    "➗ Matematika": "math",
+    "➗ Algebra": "math",
     "📐 Geometriya": "geometry",
+    "🧠 IQ test": "iq",
     "🔀 Aralash": "mixed",
 }
 
@@ -2509,7 +2594,7 @@ async def qb_stats(message: types.Message, state: FSMContext):
 
     counts = {(s, l): c for s, l, c in rows}
     text = "📊 <b>Savollar bazasi statistikasi</b>\n\n"
-    for subj in ("english", "math", "geometry"):
+    for subj in ("english", "math", "geometry", "iq"):
         text += f"<b>{SUBJECT_NAMES[subj]}</b>\n"
         for lvl in ("easy", "medium", "hard"):
             text += f"  • {LEVEL_NAMES[lvl]}: {counts.get((subj, lvl), 0)} ta\n"
@@ -3195,6 +3280,33 @@ CEFR_SAMPLES = {
         ("log₂ 32 ni hisoblang.", ["3", "4", "6", "5"], "D"),
         ("20% i 16 ga teng bo‘lgan sonni toping.", ["60", "72", "80", "96"], "C"),
     ],
+    "iq": [
+        ("Ketma-ketlikni davom ettiring: 2, 4, 8, 16, ?",
+         ["24", "32", "20", "30"], "B"),
+        ("Ketma-ketlikni davom ettiring: 1, 4, 9, 16, ?",
+         ["20", "24", "25", "36"], "C"),
+        ("Qalam : yozmoq :: pichoq : ?",
+         ["o‘qimoq", "kesmoq", "yugurmoq", "yemoq"], "B"),
+        ("3 ta mushuk 3 ta sichqonni 3 daqiqada tutsa, 6 ta mushuk "
+         "6 ta sichqonni necha daqiqada tutadi?",
+         ["3", "6", "9", "12"], "A"),
+        ("Barcha atletlar — sportchilar. Barcha sportchilar — insonlar. "
+         "Qaysi xulosa to‘g‘ri?",
+         ["Barcha atletlar — insonlar", "Barcha insonlar — atletlar",
+          "Ba'zi atletlar inson emas", "Hech bir sportchi atlet emas"], "A"),
+        ("Qaysi son ortiqcha: 4, 9, 16, 20, 25?",
+         ["4", "9", "20", "25"], "C"),
+        ("Harflar ketma-ketligini davom ettiring: A, C, E, G, ?",
+         ["H", "I", "J", "K"], "B"),
+        ("4 : 16 :: 8 : ?",
+         ["32", "48", "64", "72"], "C"),
+        ("9 ta bir xil tanga bor, bittasi yengilroq. Ikki pallali tarozida "
+         "kamida necha marta tortish yetarli?",
+         ["1", "2", "3", "4"], "B"),
+        ("Xonada 8 kishi bor. Har biri qolganlar bilan bir marta qo‘l berib "
+         "ko‘rishdi. Jami nechta qo‘l berib ko‘rishish bo‘ldi?",
+         ["16", "24", "28", "36"], "C"),
+    ],
 }
 
 
@@ -3252,8 +3364,9 @@ def get_cefr_root_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="📘 Ingliz tili", callback_data="cefr_sub:english"),
-                InlineKeyboardButton(text="➗ Matematika", callback_data="cefr_sub:math"),
-            ]
+                InlineKeyboardButton(text="➗ Algebra", callback_data="cefr_sub:math"),
+            ],
+            [InlineKeyboardButton(text="🧠 IQ test", callback_data="cefr_sub:iq")],
         ]
     )
 
